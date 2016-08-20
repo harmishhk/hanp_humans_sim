@@ -1,0 +1,7 @@
+<library path="lib/libteleport_controller">
+    <class name="teleport_controller/TeleportController" type="teleport_controller::TeleportController" base_class_type="move_humans::ControllerInterface">
+        <description>
+            A controller that teleports humans.
+        </description>
+    </class>
+</library>

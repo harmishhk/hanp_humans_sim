@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<package>
+  <name>teleport_controller</name>
+
+  <version>0.1.0</version>
+
+  <description>A controller that teleports humans</description>
+
+  <maintainer email="harmish@laas.fr">Harmish Khambhaita</maintainer>
+
+  <!--  <author email="author_email">author_name</author>  -->
+
+  <license>TODO</license>
+
+  <!--  <url website >http://wiki.ors.org/teleport_controller</url>  -->
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>base_local_planner</build_depend>
+  <build_depend>costmap_2d</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>hanp_msgs</build_depend>
+  <build_depend>hanp_prediction</build_depend>
+  <build_depend>move_humans</build_depend>
+  <build_depend>nav_core</build_depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>pluginlib</build_depend>
+  <build_depend>pcl_conversions</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>tf</build_depend>
+
+  <run_depend>base_local_planner</run_depend>
+  <run_depend>costmap_2d</run_depend>
+  <run_depend>dynamic_reconfigure</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>hanp_msgs</run_depend>
+  <run_depend>hanp_prediction</run_depend>
+  <run_depend>move_humans</run_depend>
+  <run_depend>nav_core</run_depend>
+  <run_depend>nav_msgs</run_depend>
+  <run_depend>pluginlib</run_depend>
+  <run_depend>pcl_conversions</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>tf</run_depend>
+
+  <!--  <test_depend>some_pkg</test_depend>  -->
+
+  <!--  <conflict>some_pkg</conflict>  -->
+
+  <!--  <replace>some_pkg</replace>  -->
+
+  <export>
+    <move_humans plugin="${prefix}/controller_plugin.xml" />
+  </export>
+</package>

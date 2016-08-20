@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package>
+  <name>hanp_humans_sim</name>
+
+  <version>0.0.1</version>
+
+  <description>A 2D multi-human simulator with multi-goal planner and teleport controller.</description>
+
+  <maintainer email="harmish@laas.fr">Harmish Khambhaita</maintainer>
+
+  <!--<author email="author_email">author_name</author>-->
+
+  <license>TODO</license>
+
+  <!--<url>http://wiki.ors.org/hanp_humans_sim</url>-->
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <export>
+     <metapackage/>
+  </export>
+</package>

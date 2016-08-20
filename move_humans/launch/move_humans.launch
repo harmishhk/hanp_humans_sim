@@ -1,0 +1,15 @@
+<launch>
+  <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
+
+  <node pkg="move_humans" type="move_humans" name="move_humans_node" output="screen">
+    <rosparam file="$(find move_humans)/launch/move_humans_params.yaml" command="load"/>
+
+    <param name="planner" value="multigoal_planner/MultiGoalPlanner"/>
+    <param name="controller" value="teleport_controller/TeleportController"/>
+
+    <rosparam file="$(find move_humans)/launch/planner_costmap_params.yaml" command="load" ns="planner_costmap" />
+    <rosparam file="$(find move_humans)/launch/controller_costmap_params.yaml" command="load" ns="controller_costmap" />
+
+    <rosparam file="$(find move_humans)/launch/humans.yaml" command="load"/>
+  </node>
+</launch>

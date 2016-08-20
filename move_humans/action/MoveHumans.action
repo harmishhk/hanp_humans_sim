@@ -1,0 +1,6 @@
+move_humans/HumanPose[]       start_poses
+move_humans/HumanPoseArray[]  sub_goal_poses
+move_humans/HumanPose[]       goal_poses
+---
+---
+move_humans/HumanPose[]       current_poses

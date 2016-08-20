@@ -1,0 +1,7 @@
+<library path="libmultigoal_planner">
+  <class name="multigoal_planner/MultiGoalPlanner" type="multigoal_planner::MultiGoalPlanner" base_class_type="move_humans::PlannerInterface">
+    <description>
+      Planner for multiple goals.
+    </description>
+  </class>
+</library>
