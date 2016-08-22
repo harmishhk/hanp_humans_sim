@@ -1,6 +1,6 @@
 #define NODE_NAME "teleport_controller"
 #define DIST_THRESHOLD 0.5
-#define MAX_LINEAR_VEL 0.01 // m/s
+#define MAX_LINEAR_VEL 0.7 // m/s
 #define DEFAUTL_SEGMENT_TYPE hanp_msgs::TrackedSegmentType::TORSO
 #define PLANS_PUB_TOPIC "plans"
 #define HUMANS_PUB_TOPIC "humans"
@@ -82,18 +82,9 @@ bool TeleportController::setPlans(const move_humans::map_pose_vector &plans) {
   }
 
   reached_goals_.clear();
+  last_human_poses_.clear();
   plans_.clear();
   plans_ = plans;
-
-  last_human_poses_.clear();
-  auto now = ros::Time::now();
-  for (auto &plan_kv : plans_) {
-    if (!plan_kv.second.empty()) {
-      auto human_pose = plan_kv.second.front();
-      human_pose.header.stamp = now;
-      last_human_poses_[plan_kv.first] = human_pose;
-    }
-  }
 
   ROS_INFO_NAMED(NODE_NAME, "Got new plans");
   return true;
@@ -116,21 +107,27 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
       reached_goals_[human_id] = true;
       continue;
     }
+    auto now = ros::Time::now();
     if (last_human_poses_.find(human_id) == last_human_poses_.end()) {
-      ROS_ERROR_NAMED(NODE_NAME, "Last pose not found for human %ld", human_id);
-      reached_goals_[human_id] = true;
+      auto human_pose = transformed_plan.front();
+      human_pose.header.stamp = now;
+      last_human_poses_[human_id] = human_pose;
       continue;
     }
     auto &last_pose = last_human_poses_.at(human_id);
 
-    auto time_diff = ros::Time::now() - last_pose.header.stamp;
-    auto traveled_dist = max_linear_vel_ * time_diff.toSec();
-    auto sq_traveled_dist = traveled_dist * traveled_dist;
+    auto time_diff = now - last_pose.header.stamp;
+    double traveled_dist = max_linear_vel_ * time_diff.toSec();
+    // double sq_traveled_dist = traveled_dist * traveled_dist;
 
     unsigned int i = (unsigned int)transformed_plan.size() - 1;
     while (i > 0) {
-      auto sq_dist = dist_sq(transformed_plan[i].pose, last_pose.pose);
-      if (sq_dist < sq_traveled_dist) {
+      // auto sq_dist = dist_sq(transformed_plan[i].pose, last_pose.pose);
+      double point_dist = std::hypot(
+          (transformed_plan[i].pose.position.x - last_pose.pose.position.x),
+          (transformed_plan[i].pose.position.y - last_pose.pose.position.y));
+      // if (sq_dist < sq_traveled_dist) {
+      if (point_dist < traveled_dist) { // or the point is bbehind
         break;
       } else {
         --i;
@@ -140,28 +137,54 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
     if (i == ((unsigned int)transformed_plan.size() - 1)) {
       reached_goals_.push_back(human_id);
       plans_.erase(human_id);
-      last_human_poses_[human_id] = transformed_plan.back();
+      auto current_pose = transformed_plan.back();
+      current_pose.header.stamp = now;
+      last_human_poses_[human_id] = current_pose;
       ROS_INFO_NAMED(NODE_NAME, "Human %ld reached its goal", human_id);
     } else {
-      auto &near_pose = transformed_plan[i];
+      // auto &near_pose = transformed_plan[i];
+      // auto &far_pose = transformed_plan[i + 1];1
       auto &far_pose = transformed_plan[i + 1];
-      auto sq_dist_far = dist_sq(far_pose.pose, last_pose.pose);
-      auto sq_dist_near = dist_sq(near_pose.pose, last_pose.pose);
-      auto ip_ratio =
-          (sq_traveled_dist - sq_dist_near) / (sq_dist_far - sq_dist_near);
+      // double np_dist =
+      //     std::hypot((near_pose.pose.position.x - last_pose.pose.position.x),
+      //                (near_pose.pose.position.y -
+      //                last_pose.pose.position.y));
+      double fp_dist =
+          std::hypot((far_pose.pose.position.x - last_pose.pose.position.x),
+                     (far_pose.pose.position.y - last_pose.pose.position.y));
+      // double ratio = (traveled_dist - np_dist) / (fp_dist - np_dist);
+      double ratio = traveled_dist / fp_dist;
+      // ROS_INFO_COND(human_id == 1,
+      //               "td=%.4f, fpd=%.4f, ratio=%.4f, timediff= %.4f",
+      //               traveled_dist, fp_dist, ratio, time_diff.toSec());
+      // ROS_INFO_COND(human_id == 1, "lp=(%.3f,%.3f), fp=(%.3f,%.3f)",
+      //               last_pose.pose.position.x, last_pose.pose.position.y,
+      //               far_pose.pose.position.x, far_pose.pose.position.y);
 
-      auto current_pose = last_pose;
+      geometry_msgs::PoseStamped current_pose;
+      // current_pose.pose.position.x =
+      //     near_pose.pose.position.x +
+      //     ratio * (far_pose.pose.position.x - near_pose.pose.position.x);
+      // current_pose.pose.position.y =
+      //     near_pose.pose.position.y +
+      //     ratio * (far_pose.pose.position.y - near_pose.pose.position.y);
       current_pose.pose.position.x =
-          near_pose.pose.position.x +
-          ip_ratio * (far_pose.pose.position.x - near_pose.pose.position.x);
+          last_pose.pose.position.x +
+          ratio * (far_pose.pose.position.x - last_pose.pose.position.x);
       current_pose.pose.position.y =
-          near_pose.pose.position.y +
-          ip_ratio * (far_pose.pose.position.y - near_pose.pose.position.y);
+          last_pose.pose.position.y +
+          ratio * (far_pose.pose.position.y - last_pose.pose.position.y);
+      current_pose.pose.position.z = 0;
       auto yaw =
           std::atan2(current_pose.pose.position.y - last_pose.pose.position.y,
                      current_pose.pose.position.x - last_pose.pose.position.x);
       current_pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw);
+      current_pose.header.stamp = now;
+      current_pose.header.frame_id = controller_frame_;
       last_human_poses_[human_id] = current_pose;
+
+      // ROS_INFO_COND(human_id == 1, "cp=(%.3f,%.3f)",
+      //               current_pose.pose.position.x, current_pose.pose.position.y);
     }
   }
 
@@ -201,15 +224,13 @@ bool TeleportController::transformPlans(
       ROS_ERROR_NAMED(NODE_NAME, "Received empty plan for human %ld", human_id);
       continue;
     }
-    if (current_poses.find(human_id) == current_poses.end()) {
-      ROS_ERROR_NAMED(NODE_NAME, "No current pose found for human %ld",
-                      human_id);
-      continue;
-    }
-    tf::Stamped<tf::Pose> cp_tf, cp_side_tf;
-    tf::poseStampedMsgToTF(current_poses.at(human_id), cp_tf);
-    cp_side_tf.setData(cp_tf * tf::Transform(tf::Quaternion(0, 0, 0, 1),
-                                             tf::Vector3(0, 0, 0)));
+
+    auto &current_pose = (current_poses.find(human_id) == current_poses.end())
+                             ? plan.front()
+                             : current_poses.at(human_id);
+
+    tf::Stamped<tf::Pose> cp_tf;
+    tf::poseStampedMsgToTF(current_pose, cp_tf);
 
     if (plan[0].header.frame_id != controller_frame_ ||
         cp_tf.frame_id_ != controller_frame_) {
@@ -221,8 +242,7 @@ bool TeleportController::transformPlans(
                              ros::Time(0), plan_to_controller_transform);
 
         cp_tf.setData(plan_to_controller_transform.inverse() * cp_tf);
-        cp_side_tf.setData(plan_to_controller_transform.inverse() * cp_side_tf);
-        auto i = prunePlan(plan, cp_tf, cp_side_tf);
+        auto i = prunePlan(plan, cp_tf);
 
         tf::Stamped<tf::Pose> tf_pose;
         geometry_msgs::PoseStamped transformed_pose;
@@ -248,7 +268,7 @@ bool TeleportController::transformPlans(
         continue;
       }
     } else {
-      auto i = prunePlan(plan, cp_tf, cp_side_tf);
+      auto i = prunePlan(plan, cp_tf);
       move_humans::pose_vector transformed_plan(plan.begin() + i, plan.end());
       transformed_plans[human_id] = transformed_plan;
     }
@@ -259,29 +279,24 @@ bool TeleportController::transformPlans(
 
 unsigned int
 TeleportController::prunePlan(const move_humans::pose_vector &plan,
-                              const tf::Stamped<tf::Pose> &cp_tf,
-                              const tf::Stamped<tf::Pose> &cp_side_tf) {
-  unsigned int i = 0;
-  double sq_dist = 0.0, x_diff, y_diff;
-  while (i < (unsigned int)plan.size()) {
-    x_diff = cp_tf.getOrigin().x() - plan[i].pose.position.x;
-    y_diff = cp_tf.getOrigin().y() - plan[i].pose.position.y;
-    sq_dist = x_diff * x_diff + y_diff * y_diff;
-
-    auto &ax = cp_tf.getOrigin().x();
-    auto &ay = cp_tf.getOrigin().y();
-    auto &bx = cp_tf.getOrigin().x();
-    auto &by = cp_tf.getOrigin().y();
-    auto &cx = plan[i].pose.position.x;
-    auto &cy = plan[i].pose.position.y;
-    auto is_behind = ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) < 0;
-
-    if (sq_dist <= sq_dist_threshold_ && !is_behind) {
-      break;
+                              const tf::Stamped<tf::Pose> &cp_tf) {
+  unsigned int i = plan.size() - 1;
+  double x_diff, y_diff, sq_diff, sq_dist = std::numeric_limits<double>::max();
+  while (i > 0) {
+    x_diff = plan[i].pose.position.x - cp_tf.getOrigin().x();
+    y_diff = plan[i].pose.position.y - cp_tf.getOrigin().y();
+    sq_diff = x_diff * x_diff + y_diff * y_diff;
+    if (sq_diff <= sq_dist_threshold_) {
+      if (sq_diff > sq_dist) {
+        break;
+      }
+      sq_dist = sq_diff;
     }
-    ++i;
+    --i;
   }
-  return i;
+  return ((i + 2) > ((unsigned int)plan.size() - 1))
+             ? ((unsigned int)plan.size() - 1)
+             : (i + 2);
 }
 
 double TeleportController::dist_sq(const geometry_msgs::Pose &pose1,

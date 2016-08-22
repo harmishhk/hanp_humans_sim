@@ -1,6 +1,7 @@
 #define NODE_NAME "multigoal_planner"
 #define CONVERT_OFFSET 0.5
 #define DEFAULT_TOLERANCE 0.0
+#define SQ_DIST_PLAN_THRESHOLD 0.01
 #define PLANS_PUB_TOPIC "plans"
 #define PLANS_POSES_PUB_TOPIC "plans_poses"
 #define PLANS_POSES_PUB_Z_REDUCE_FACTOR 100.0
@@ -55,7 +56,9 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
     private_nh.param("allow_unknown", allow_unknown_, true);
     private_nh.param("default_tolerance", default_tolerance_,
                      DEFAULT_TOLERANCE);
-    private_nh.param("visualize_potential", visualize_potential_, true);
+    private_nh.param("sq_dist_plan_threshold", sq_dist_plan_threshold_,
+                     SQ_DIST_PLAN_THRESHOLD);
+    private_nh.param("visualize_potential", visualize_potential_, false);
     private_nh.param("visualize_paths_poses", visualize_paths_poses_, true);
     private_nh.param("paths_poses_z_reduce_factor",
                      paths_poses_z_reduce_factor_,
@@ -218,8 +221,6 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       bool found_legal = planner_->calculatePotentials(
           costmap_->getCharMap(), points_x[i], points_y[i], points_x[i + 1],
           points_y[i + 1], nx * ny * 2, potential_array_);
-      ROS_INFO("Calculated Potential: sx=%f, sy=%f, ex=%f, ey=%f", points_x[i],
-               points_y[i], points_x[i + 1], points_y[i + 1]);
 
       if (found_legal) {
         move_humans::pose_vector plan;
@@ -239,7 +240,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       }
     }
 
-    orientation_filter_->processPath(start, combined_plan);
+    // orientation_filter_->processPath(start, combined_plan);
 
     if (!combined_plan.empty()) {
       geometry_msgs::PoseStamped goal_copy = goal;
@@ -329,7 +330,6 @@ bool MultiGoalPlanner::getPlanFromPotential(double start_x, double start_y,
     ROS_WARN_NAMED(NODE_NAME, "No path from potential using gradient");
     if (visualize_potential_) {
       publishPotential(potential_array_);
-      sleep(5);
     }
     path.clear();
     if (!path_maker_fallback_->getPath(potential_array_, start_x, start_y,
@@ -340,9 +340,19 @@ bool MultiGoalPlanner::getPlanFromPotential(double start_x, double start_y,
   }
 
   ros::Time plan_time = ros::Time::now();
+  double world_x, world_y, last_world_x = 0.0, last_world_y = 0.0, wx_diff,
+                           wy_diff, sq_dist_w;
   for (auto &point : boost::adaptors::reverse(path)) {
-    double world_x, world_y;
     mapToWorld(point.first, point.second, world_x, world_y);
+
+    wx_diff = world_x - last_world_x;
+    wy_diff = world_y - last_world_y;
+    sq_dist_w = wx_diff * wx_diff + wy_diff * wy_diff;
+    if (sq_dist_w < sq_dist_plan_threshold_) {
+      continue;
+    }
+    last_world_x = world_x;
+    last_world_y = world_y;
 
     geometry_msgs::PoseStamped pose;
     pose.header.stamp = plan_time;

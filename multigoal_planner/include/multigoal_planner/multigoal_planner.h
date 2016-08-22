@@ -54,6 +54,7 @@ private:
   double default_tolerance_, paths_poses_z_reduce_factor_;
   float convert_offset_;
   int publish_scale_;
+  double sq_dist_plan_threshold_;
 
   global_planner::PotentialCalculator *p_calc_;
   global_planner::Expander *planner_;

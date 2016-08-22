@@ -68,8 +68,7 @@ private:
                       const move_humans::map_pose &current_poses,
                       move_humans::map_pose_vector &transformed_plans);
   unsigned int prunePlan(const move_humans::pose_vector &plan,
-                         const tf::Stamped<tf::Pose> &cp_tf,
-                         const tf::Stamped<tf::Pose> &cp_side_tf);
+                         const tf::Stamped<tf::Pose> &cp_tf);
   double dist_sq(const geometry_msgs::Pose &pose1,
                  const geometry_msgs::Pose &pose2);
 
