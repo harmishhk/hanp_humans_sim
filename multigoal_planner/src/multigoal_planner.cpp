@@ -9,7 +9,9 @@
 #include <multigoal_planner/multigoal_planner.h>
 #include <pluginlib/class_list_macros.h>
 #include <global_planner/dijkstra.h>
+#include <global_planner/astar.h>
 #include <global_planner/gradient_path.h>
+#include <global_planner/grid_path.h>
 #include <global_planner/quadratic_calculator.h>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -36,13 +38,15 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
     tf_ = tf;
     costmap_ros_ = costmap_ros;
     costmap_ = costmap_ros_->getCostmap();
-    global_frame_ = costmap_ros_->getGlobalFrameID();
+    planner_frame_ = costmap_ros_->getGlobalFrameID();
 
     auto cx = costmap_->getSizeInCellsX(), cy = costmap_->getSizeInCellsY();
 
     p_calc_ = new global_planner::QuadraticCalculator(cx, cy);
     planner_ = new global_planner::DijkstraExpansion(p_calc_, cx, cy);
+    // planner_ = new global_planner::AStarExpansion(p_calc_, cx, cy);
     path_maker_ = new global_planner::GradientPath(p_calc_);
+    path_maker_fallback_ = new global_planner::GridPath(p_calc_);
     orientation_filter_ = new global_planner::OrientationFilter();
 
     ros::NodeHandle private_nh("~/" + name);
@@ -51,11 +55,12 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
     private_nh.param("allow_unknown", allow_unknown_, true);
     private_nh.param("default_tolerance", default_tolerance_,
                      DEFAULT_TOLERANCE);
-    private_nh.param("visualize_potential", visualize_potential_, false);
-    private_nh.param("visualize_paths_poses", visualize_paths_poses_, false);
+    private_nh.param("visualize_potential", visualize_potential_, true);
+    private_nh.param("visualize_paths_poses", visualize_paths_poses_, true);
     private_nh.param("paths_poses_z_reduce_factor",
                      paths_poses_z_reduce_factor_,
                      PLANS_POSES_PUB_Z_REDUCE_FACTOR);
+    private_nh.param("publish_scale", publish_scale_, 100);
 
     planner_->setHasUnknown(allow_unknown_);
 
@@ -63,8 +68,10 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
     tf_prefix_ = tf::getPrefixParam(prefix_nh);
 
     plans_pub_ = private_nh.advertise<hanp_msgs::PathArray>(PLANS_PUB_TOPIC, 1);
-    plans_poses_pub_ = private_nh.advertise<geometry_msgs::PoseArray>(
-        PLANS_POSES_PUB_TOPIC, 1);
+    if (visualize_paths_poses_) {
+      plans_poses_pub_ = private_nh.advertise<geometry_msgs::PoseArray>(
+          PLANS_POSES_PUB_TOPIC, 1);
+    }
     if (visualize_potential_) {
       potential_pub_ =
           private_nh.advertise<nav_msgs::OccupancyGrid>(POTENTIAL_PUB_TOPIC, 1);
@@ -121,6 +128,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
   p_calc_->setSize(nx, ny);
   planner_->setSize(nx, ny);
   path_maker_->setSize(nx, ny);
+  path_maker_fallback_->setSize(nx, ny);
   potential_array_ = new float[nx * ny];
 
   outlineMap(costmap_->getCharMap(), nx, ny, costmap_2d::LETHAL_OBSTACLE);
@@ -132,32 +140,32 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
     auto &goal = goals.find(human_id)->second;
     auto &sub_goal_vector = (sub_goals.find(human_id) != sub_goals.end())
                                 ? sub_goals.find(human_id)->second
-                                : std::vector<geometry_msgs::PoseStamped>();
+                                : move_humans::pose_vector();
 
     if (tf::resolve(tf_prefix_, start.header.frame_id) !=
-        tf::resolve(tf_prefix_, global_frame_)) {
+        tf::resolve(tf_prefix_, planner_frame_)) {
       ROS_ERROR_NAMED(NODE_NAME, "The start pose must be in the %s frame; for "
                                  "human %ld, it is instead in the %s frame",
-                      tf::resolve(tf_prefix_, global_frame_).c_str(), human_id,
+                      tf::resolve(tf_prefix_, planner_frame_).c_str(), human_id,
                       tf::resolve(tf_prefix_, start.header.frame_id).c_str());
       continue;
     }
     if (tf::resolve(tf_prefix_, goal.header.frame_id) !=
-        tf::resolve(tf_prefix_, global_frame_)) {
+        tf::resolve(tf_prefix_, planner_frame_)) {
       ROS_ERROR_NAMED(NODE_NAME, "The goal pose must be in the %s frame; for "
                                  "human %ld, it is instead in the %s frame",
-                      tf::resolve(tf_prefix_, global_frame_).c_str(), human_id,
+                      tf::resolve(tf_prefix_, planner_frame_).c_str(), human_id,
                       tf::resolve(tf_prefix_, goal.header.frame_id).c_str());
       continue;
     }
     bool valid_sub_goals = true;
     for (auto &sub_goal : sub_goal_vector) {
       if (tf::resolve(tf_prefix_, sub_goal.header.frame_id) !=
-          tf::resolve(tf_prefix_, global_frame_)) {
+          tf::resolve(tf_prefix_, planner_frame_)) {
         ROS_ERROR_NAMED(
             NODE_NAME, "The sub-goal pose must be in the %s frame; for human "
                        "%ld, it is instead in the %s frame",
-            tf::resolve(tf_prefix_, global_frame_).c_str(), human_id,
+            tf::resolve(tf_prefix_, planner_frame_).c_str(), human_id,
             tf::resolve(tf_prefix_, sub_goal.header.frame_id).c_str());
         valid_sub_goals = false;
         break;
@@ -205,14 +213,16 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       continue;
     }
 
-    std::vector<geometry_msgs::PoseStamped> combined_plan;
+    move_humans::pose_vector combined_plan;
     for (auto i = 0; i < (points_x.size() - 1); i++) {
       bool found_legal = planner_->calculatePotentials(
           costmap_->getCharMap(), points_x[i], points_y[i], points_x[i + 1],
           points_y[i + 1], nx * ny * 2, potential_array_);
+      ROS_INFO("Calculated Potential: sx=%f, sy=%f, ex=%f, ey=%f", points_x[i],
+               points_y[i], points_x[i + 1], points_y[i + 1]);
 
       if (found_legal) {
-        std::vector<geometry_msgs::PoseStamped> plan;
+        move_humans::pose_vector plan;
         if (getPlanFromPotential(points_x[i], points_y[i], points_x[i + 1],
                                  points_y[i + 1], plan)) {
           combined_plan.insert(combined_plan.end(), plan.begin(), plan.end());
@@ -228,8 +238,6 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
         break;
       }
     }
-
-    // TODO: calculate and publish potential
 
     orientation_filter_->processPath(start, combined_plan);
 
@@ -312,14 +320,23 @@ void MultiGoalPlanner::outlineMap(unsigned char *costarr, int nx, int ny,
   }
 }
 
-bool MultiGoalPlanner::getPlanFromPotential(
-    double start_x, double start_y, double goal_x, double goal_y,
-    std::vector<geometry_msgs::PoseStamped> &plan) {
+bool MultiGoalPlanner::getPlanFromPotential(double start_x, double start_y,
+                                            double goal_x, double goal_y,
+                                            move_humans::pose_vector &plan) {
   std::vector<std::pair<float, float>> path;
   if (!path_maker_->getPath(potential_array_, start_x, start_y, goal_x, goal_y,
                             path)) {
-    ROS_ERROR_NAMED(NODE_NAME, "No path from potential");
-    return false;
+    ROS_WARN_NAMED(NODE_NAME, "No path from potential using gradient");
+    if (visualize_potential_) {
+      publishPotential(potential_array_);
+      sleep(5);
+    }
+    path.clear();
+    if (!path_maker_fallback_->getPath(potential_array_, start_x, start_y,
+                                       goal_x, goal_y, path)) {
+      ROS_ERROR_NAMED(NODE_NAME, "No path from potential using grid");
+      return false;
+    }
   }
 
   ros::Time plan_time = ros::Time::now();
@@ -329,7 +346,7 @@ bool MultiGoalPlanner::getPlanFromPotential(
 
     geometry_msgs::PoseStamped pose;
     pose.header.stamp = plan_time;
-    pose.header.frame_id = global_frame_;
+    pose.header.frame_id = planner_frame_;
     pose.pose.position.x = world_x;
     pose.pose.position.y = world_y;
     pose.pose.position.z = 0.0;
@@ -348,5 +365,44 @@ void MultiGoalPlanner::mapToWorld(double mx, double my, double &wx,
        (mx + convert_offset_) * costmap_->getResolution();
   wy = costmap_->getOriginY() +
        (my + convert_offset_) * costmap_->getResolution();
+}
+
+void MultiGoalPlanner::publishPotential(float *potential) {
+  int nx = costmap_->getSizeInCellsX(), ny = costmap_->getSizeInCellsY();
+  double resolution = costmap_->getResolution();
+  nav_msgs::OccupancyGrid grid;
+
+  grid.header.frame_id = planner_frame_;
+  grid.header.stamp = ros::Time::now();
+  grid.info.resolution = resolution;
+  grid.info.width = nx;
+  grid.info.height = ny;
+
+  double wx, wy;
+  costmap_->mapToWorld(0, 0, wx, wy);
+  grid.info.origin.position.x = wx - resolution / 2;
+  grid.info.origin.position.y = wy - resolution / 2;
+  grid.info.origin.position.z = 0.0;
+  grid.info.origin.orientation.w = 1.0;
+
+  grid.data.resize(nx * ny);
+
+  float max = 0.0;
+  for (unsigned int i = 0; i < grid.data.size(); i++) {
+    float potential = potential_array_[i];
+    if (potential < POT_HIGH) {
+      if (potential > max) {
+        max = potential;
+      }
+    }
+  }
+
+  for (unsigned int i = 0; i < grid.data.size(); i++) {
+    if (potential_array_[i] >= POT_HIGH) {
+      grid.data[i] = -1;
+    } else
+      grid.data[i] = potential_array_[i] * publish_scale_ / max;
+  }
+  potential_pub_.publish(grid);
 }
 } // namespace multigoal_planner

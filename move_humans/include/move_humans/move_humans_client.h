@@ -24,12 +24,16 @@ private:
   MoveHumansActionClient *mhac_;
 
   std::string new_human_sub_topic_, goal_sub_topic_, sub_goal_sub_topic_,
-      remove_human_sub_topic_, frame_id_;
-  ros::Subscriber new_human_sub_, goal_sub_, sub_goal_sub_, remove_human_sub_;
+      remove_human_sub_topic_, re_initialize_sub_topic_, frame_id_;
+  ros::Subscriber new_human_sub_, goal_sub_, sub_goal_sub_, remove_human_sub_,
+      re_initialize_sub_;
   void newHumanCB(const move_humans::HumanPose &new_human);
   void goalCB(const move_humans::HumanPose &goal);
   void subGoalCB(const move_humans::HumanPose &sub_goal);
   void removeHumanCB(const std_msgs::UInt64 &human_id);
+  void reInitializeCB(const std_msgs::Empty &empty);
+
+  void feedbackCB(const MoveHumansFeedbackConstPtr &feedback);
 
   boost::thread *client_thread_;
   boost::mutex client_mutex_;

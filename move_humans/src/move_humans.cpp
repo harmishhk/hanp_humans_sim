@@ -28,7 +28,7 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   private_nh.param("planner_frequency", planner_frequency_, 0.0);
   private_nh.param("controller_frequency", controller_frequency_, 20.0);
   private_nh.param("shutdown_costmaps", shutdown_costmaps_, false);
-  private_nh.param("publish_feedback", publish_feedback_, false);
+  private_nh.param("publish_feedback", publish_feedback_, true);
 
   current_goals_pub_ =
       private_nh.advertise<geometry_msgs::PoseArray>("current_goals", 0);
@@ -280,8 +280,6 @@ void MoveHumans::actionCB(
   while (nh.ok()) {
     if ((mhas_->isPreemptRequested())) {
       if (mhas_->isNewGoalAvailable()) {
-        move_humans::MoveHumansGoal new_goal = *mhas_->acceptNewGoal();
-
         move_humans::map_pose start_poses, goal_poses;
         move_humans::map_pose_vector sub_goal_poses;
         if (!validateGoals(*mhas_->acceptNewGoal(), start_poses, sub_goal_poses,
@@ -347,8 +345,6 @@ void MoveHumans::actionCB(
       controller_plans_ = latest_plans_;
       latest_plans_ = controller_plans;
       lock.unlock();
-
-      ROS_INFO_NAMED(NODE_NAME, "Got new plans for the controller");
 
       if (!controller_->setPlans(*controller_plans_)) {
         ROS_ERROR_NAMED(NODE_NAME,
@@ -436,8 +432,7 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 
   case move_humans::MoveHumansState::IDLE: {
     ROS_INFO_NAMED(NODE_NAME, "In IDLE state");
-    ROS_DEBUG_NAMED(NODE_NAME,
-                    "The planner could not calculate plans");
+    ROS_DEBUG_NAMED(NODE_NAME, "The planner could not calculate plans");
     mhas_->setAborted(move_humans::MoveHumansResult(),
                       "The planner could not calculate plans");
     resetState();
@@ -554,7 +549,7 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
     goals[goal.human_id] = goal.pose;
   }
   for (auto &sub_goal_poses : mh_goal.sub_goal_poses) {
-    std::vector<geometry_msgs::PoseStamped> valid_sub_goals;
+    move_humans::pose_vector valid_sub_goals;
     for (auto &sub_goal : sub_goal_poses.poses) {
       if (!isQuaternionValid(sub_goal.pose.orientation)) {
         ROS_ERROR_NAMED(NODE_NAME, "Removing a sub-goals for human %lu, it was "
@@ -651,7 +646,7 @@ move_humans::map_pose_vector MoveHumans::toGlobaolFrame(
   move_humans::map_pose_vector global_pose_vector_map;
   std::string global_frame = planner_costmap_ros_->getGlobalFrameID();
   for (auto &pose_vector_kv : pose_vector_map) {
-    std::vector<geometry_msgs::PoseStamped> global_pose_vector;
+    move_humans::pose_vector global_pose_vector;
     for (auto &pose : pose_vector_kv.second) {
       tf::Stamped<tf::Pose> tf_pose, global_tf_pose;
       poseStampedMsgToTF(pose, tf_pose);

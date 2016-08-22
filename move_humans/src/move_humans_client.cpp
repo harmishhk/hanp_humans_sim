@@ -5,6 +5,7 @@
 #define GOAL_SUB_TOPIC "add_human_goal"
 #define SUB_GOAL_SUB_TOPIC "add_sub_goal"
 #define REMOVE_HUMAN_SUB_TOPIC "remove_human"
+#define RE_INITIALIZE_SUB_TOPIC "re_initialize"
 #include <move_humans/move_humans_client.h>
 
 #include <boost/thread.hpp>
@@ -23,6 +24,8 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
                    std::string(SUB_GOAL_SUB_TOPIC));
   private_nh.param("remove_human_sub_topic", remove_human_sub_topic_,
                    std::string(REMOVE_HUMAN_SUB_TOPIC));
+  private_nh.param("re_initialize_sub_topic", re_initialize_sub_topic_,
+                   std::string(RE_INITIALIZE_SUB_TOPIC));
   private_nh.param("frame_id", frame_id_, std::string(FRAME_ID));
 
   if (!getHumansGoals(private_nh, starts_, goals_)) {
@@ -41,6 +44,8 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
                                        &MoveHumansClient::subGoalCB, this);
   remove_human_sub_ = private_nh.subscribe(
       remove_human_sub_topic_, 1, &MoveHumansClient::removeHumanCB, this);
+  re_initialize_sub_ = private_nh.subscribe(
+      re_initialize_sub_topic_, 1, &MoveHumansClient::reInitializeCB, this);
 
   client_thread_ =
       new boost::thread(boost::bind(&MoveHumansClient::clientThread, this));
@@ -76,7 +81,9 @@ void MoveHumansClient::clientThread() {
   lock.unlock();
 
   ROS_INFO_NAMED(NODE_NAME, "Seding initial goals");
-  mhac_->sendGoal(goal);
+  mhac_->sendGoal(goal, MoveHumansActionClient::SimpleDoneCallback(),
+                  MoveHumansActionClient::SimpleActiveCallback(),
+                  boost::bind(&MoveHumansClient::feedbackCB, this, _1));
 
   ros::NodeHandle nh;
   lock.lock();
@@ -105,7 +112,9 @@ void MoveHumansClient::clientThread() {
     lock.unlock();
 
     ROS_INFO_NAMED(NODE_NAME, "Seding new goals");
-    mhac_->sendGoal(goal);
+    mhac_->sendGoal(goal, MoveHumansActionClient::SimpleDoneCallback(),
+                    MoveHumansActionClient::SimpleActiveCallback(),
+                    boost::bind(&MoveHumansClient::feedbackCB, this, _1));
     lock.lock();
   }
 
@@ -258,7 +267,7 @@ void MoveHumansClient::subGoalCB(const move_humans::HumanPose &sub_goal) {
     ROS_INFO_NAMED(NODE_NAME, "Added additional sub-goal pose for human %ld",
                    sub_goal.human_id);
   } else {
-    std::vector<geometry_msgs::PoseStamped> sub_goal_vector;
+    move_humans::pose_vector sub_goal_vector;
     sub_goal_vector.push_back(sub_goal.pose);
     sub_goals_[sub_goal.human_id] = sub_goal_vector;
     ROS_INFO_NAMED(NODE_NAME, "Added sub-goal pose for human %ld",
@@ -273,6 +282,29 @@ void MoveHumansClient::removeHumanCB(const std_msgs::UInt64 &human_id) {
   goals_.erase(human_id.data);
   sub_goals_.erase(human_id.data);
   client_cond_.notify_one();
+}
+
+void MoveHumansClient::reInitializeCB(const std_msgs::Empty &empty) {
+  ros::NodeHandle private_nh("~");
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  sub_goals_.clear();
+  starts_.clear();
+  goals_.clear();
+  if (!getHumansGoals(private_nh, starts_, goals_)) {
+    ROS_ERROR_NAMED(
+        NODE_NAME,
+        "Failed to read human start-goal positions from the parameter server");
+    starts_.clear();
+    goals_.clear();
+  }
+  client_cond_.notify_one();
+}
+
+void MoveHumansClient::feedbackCB(const MoveHumansFeedbackConstPtr &feedback) {
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  for (auto &current_pose : feedback->current_poses) {
+    starts_[current_pose.human_id] = current_pose.pose;
+  }
 }
 
 } // namespace move_humans

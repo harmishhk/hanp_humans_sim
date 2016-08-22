@@ -53,23 +53,24 @@ private:
       visualize_paths_poses_;
   double default_tolerance_, paths_poses_z_reduce_factor_;
   float convert_offset_;
+  int publish_scale_;
 
   global_planner::PotentialCalculator *p_calc_;
   global_planner::Expander *planner_;
-  global_planner::Traceback *path_maker_;
+  global_planner::Traceback *path_maker_, *path_maker_fallback_;
   global_planner::OrientationFilter *orientation_filter_;
   float *potential_array_;
 
-  std::string tf_prefix_, global_frame_;
+  std::string tf_prefix_, planner_frame_;
   boost::mutex planning_mutex_;
 
   bool getPlanFromPotential(double start_x, double start_y, double goal_x,
-                            double goal_y,
-                            std::vector<geometry_msgs::PoseStamped> &plan);
+                            double goal_y, move_humans::pose_vector &plan);
 
   bool worldToMap(double wx, double wy, double &mx, double &my);
   void mapToWorld(double mx, double my, double &wx, double &wy);
   void outlineMap(unsigned char *costarr, int nx, int ny, unsigned char value);
+  void publishPotential(float *potential);
 };
 };
 
