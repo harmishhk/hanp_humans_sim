@@ -6,6 +6,7 @@
 #define SUB_GOAL_SUB_TOPIC "add_sub_goal"
 #define REMOVE_HUMAN_SUB_TOPIC "remove_human"
 #define RE_INITIALIZE_SUB_TOPIC "re_initialize"
+#define POINT_SUB_TOPIC "/clicked_point"
 #include <move_humans/move_humans_client.h>
 
 #include <boost/thread.hpp>
@@ -26,6 +27,10 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
                    std::string(REMOVE_HUMAN_SUB_TOPIC));
   private_nh.param("re_initialize_sub_topic", re_initialize_sub_topic_,
                    std::string(RE_INITIALIZE_SUB_TOPIC));
+
+  private_nh.param("point_sub_topic", point_sub_topic_,
+                   std::string(POINT_SUB_TOPIC));
+
   private_nh.param("frame_id", frame_id_, std::string(FRAME_ID));
 
   if (!getHumansGoals(private_nh, starts_, goals_)) {
@@ -46,6 +51,8 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
       remove_human_sub_topic_, 1, &MoveHumansClient::removeHumanCB, this);
   re_initialize_sub_ = private_nh.subscribe(
       re_initialize_sub_topic_, 1, &MoveHumansClient::reInitializeCB, this);
+
+  point_sub_ = private_nh.subscribe(point_sub_topic_, 1, &MoveHumansClient::pointCB, this);
 
   client_thread_ =
       new boost::thread(boost::bind(&MoveHumansClient::clientThread, this));
@@ -305,6 +312,15 @@ void MoveHumansClient::feedbackCB(const MoveHumansFeedbackConstPtr &feedback) {
   for (auto &current_pose : feedback->current_poses) {
     starts_[current_pose.human_id] = current_pose.pose;
   }
+}
+
+void MoveHumansClient::pointCB(const geometry_msgs::PointStamped &point) {
+  move_humans::HumanPose sub_goal;
+  sub_goal.human_id = 3;
+  sub_goal.pose.header = point.header;
+  sub_goal.pose.pose.position = point.point;
+  sub_goal.pose.pose.orientation.w = 1.0;
+  subGoalCB(sub_goal);
 }
 
 } // namespace move_humans
