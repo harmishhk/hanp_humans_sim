@@ -1,1 +1,8 @@
-.vscode/*
+# Build
+**/build/
+
+# Definitions
+**/typings/
+
+# Editor
+/.vscode/

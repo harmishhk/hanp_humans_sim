@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+        "allowJs": false,
+        "module": "amd",
+        "outFile": "./build/moveHumansViz.js",
+        "preserveConstEnums": true,
+        "removeComments": true,
+        "sourceMap": true
+    },
+    "files": [
+      "typings/index.d.ts",
+      "src/moveHumansViz.ts"
+    ]
+}
