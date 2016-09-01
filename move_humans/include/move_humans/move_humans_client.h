@@ -8,6 +8,8 @@
 #include <tf/transform_listener.h>
 #include <std_msgs/UInt64.h>
 #include <boost/thread.hpp>
+#include <std_srvs/Trigger.h>
+#include <move_humans/HumanUpdate.h>
 
 namespace move_humans {
 typedef actionlib::SimpleActionClient<move_humans::MoveHumansAction>
@@ -23,15 +25,23 @@ private:
 
   MoveHumansActionClient *mhac_;
 
-  std::string new_human_sub_topic_, goal_sub_topic_, sub_goal_sub_topic_,
-      remove_human_sub_topic_, re_initialize_sub_topic_, frame_id_;
-  ros::Subscriber new_human_sub_, goal_sub_, sub_goal_sub_, remove_human_sub_,
-      re_initialize_sub_;
-  void newHumanCB(const move_humans::HumanPose &new_human);
-  void goalCB(const move_humans::HumanPose &goal);
-  void subGoalCB(const move_humans::HumanPose &sub_goal);
-  void removeHumanCB(const std_msgs::UInt64 &human_id);
-  void reInitializeCB(const std_msgs::Empty &empty);
+  std::string frame_id_;
+
+  std::string reset_simulation_service_name_, add_human_service_name_,
+      delete_human_service_name_, add_subgoal_service_name_,
+      update_goal_service_name_;
+  ros::ServiceServer reset_simulation_server_, add_human_server_,
+      delete_human_server_, add_subgoal_server_, update_goal_server_;
+  bool resetSimulation(std_srvs::Trigger::Request &req,
+                       std_srvs::Trigger::Response &res);
+  bool addHuman(move_humans::HumanUpdate::Request &req,
+                move_humans::HumanUpdate::Response &res);
+  bool deleteHuman(move_humans::HumanUpdate::Request &req,
+                move_humans::HumanUpdate::Response &res);
+  bool addSubgoal(move_humans::HumanUpdate::Request &req,
+                move_humans::HumanUpdate::Response &res);
+  bool updateGoal(move_humans::HumanUpdate::Request &req,
+                move_humans::HumanUpdate::Response &res);
 
   void feedbackCB(const MoveHumansFeedbackConstPtr &feedback);
 

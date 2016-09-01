@@ -14,6 +14,8 @@ find_package(catkin REQUIRED COMPONENTS
   hanp_msgs
   nav_core
   tf
+  std_srvs
+  message_generation
 )
 
 find_package(Eigen3 REQUIRED)
@@ -29,10 +31,10 @@ add_message_files(
     HumanPoseArray.msg
 )
 
-# add_service_files(
-#   FILES
-#     Service1.srv
-# )
+add_service_files(
+  FILES
+    HumanUpdate.srv
+)
 
 add_action_files(
   FILES
@@ -65,6 +67,8 @@ catkin_package(
     hanp_msgs
     nav_core
     tf
+    std_srvs
+    message_runtime
 #   DEPENDS
 #     system_lib
 )

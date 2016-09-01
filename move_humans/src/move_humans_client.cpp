@@ -1,11 +1,13 @@
 #define NODE_NAME "move_humans_client"
 #define TIMEOUT 30.0
 #define FRAME_ID "map"
-#define NEW_HUMAN_SUB_TOPIC "add_human"
-#define GOAL_SUB_TOPIC "add_human_goal"
-#define SUB_GOAL_SUB_TOPIC "add_sub_goal"
-#define REMOVE_HUMAN_SUB_TOPIC "remove_human"
-#define RE_INITIALIZE_SUB_TOPIC "re_initialize"
+
+#define RESET_SIMULATION_SERVICE_NAME "reset_simulation"
+#define ADD_HUMAN_SERVICE_NAME "add_human"
+#define DELETE_HUMAN_SERVICE_NAME "delete_human"
+#define ADD_SUBGOAL_SERVICE_NAME "add_sub_goal"
+#define UPDATE_GOAL_SERVICE_NAME "update_goal"
+
 #include <move_humans/move_humans_client.h>
 
 #include <boost/thread.hpp>
@@ -16,17 +18,19 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
 
   mhac_ = new MoveHumansActionClient("/move_humans_node/action_server", true);
 
-  private_nh.param("new_human_sub_topic", new_human_sub_topic_,
-                   std::string(NEW_HUMAN_SUB_TOPIC));
-  private_nh.param("goal_sub_topic", goal_sub_topic_,
-                   std::string(GOAL_SUB_TOPIC));
-  private_nh.param("sub_goal_sub_topic", sub_goal_sub_topic_,
-                   std::string(SUB_GOAL_SUB_TOPIC));
-  private_nh.param("remove_human_sub_topic", remove_human_sub_topic_,
-                   std::string(REMOVE_HUMAN_SUB_TOPIC));
-  private_nh.param("re_initialize_sub_topic", re_initialize_sub_topic_,
-                   std::string(RE_INITIALIZE_SUB_TOPIC));
   private_nh.param("frame_id", frame_id_, std::string(FRAME_ID));
+
+  private_nh.param("reset_simulation_service_name",
+                   reset_simulation_service_name_,
+                   std::string(RESET_SIMULATION_SERVICE_NAME));
+  private_nh.param("add_human_service_name", add_human_service_name_,
+                   std::string(ADD_HUMAN_SERVICE_NAME));
+  private_nh.param("delete_human_service_name", delete_human_service_name_,
+                   std::string(DELETE_HUMAN_SERVICE_NAME));
+  private_nh.param("add_subgoal_service_name", add_subgoal_service_name_,
+                   std::string(ADD_SUBGOAL_SERVICE_NAME));
+  private_nh.param("update_goal_service_name", update_goal_service_name_,
+                   std::string(UPDATE_GOAL_SERVICE_NAME));
 
   if (!getHumansGoals(private_nh, starts_, goals_)) {
     ROS_ERROR_NAMED(
@@ -36,16 +40,16 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
     goals_.clear();
   }
 
-  new_human_sub_ = private_nh.subscribe(new_human_sub_topic_, 1,
-                                        &MoveHumansClient::newHumanCB, this);
-  goal_sub_ =
-      private_nh.subscribe(goal_sub_topic_, 1, &MoveHumansClient::goalCB, this);
-  sub_goal_sub_ = private_nh.subscribe(sub_goal_sub_topic_, 1,
-                                       &MoveHumansClient::subGoalCB, this);
-  remove_human_sub_ = private_nh.subscribe(
-      remove_human_sub_topic_, 1, &MoveHumansClient::removeHumanCB, this);
-  re_initialize_sub_ = private_nh.subscribe(
-      re_initialize_sub_topic_, 1, &MoveHumansClient::reInitializeCB, this);
+  reset_simulation_server_ = private_nh.advertiseService(
+      reset_simulation_service_name_, &MoveHumansClient::resetSimulation, this);
+  add_human_server_ = private_nh.advertiseService(
+      reset_simulation_service_name_, &MoveHumansClient::addHuman, this);
+  delete_human_server_ = private_nh.advertiseService(
+      reset_simulation_service_name_, &MoveHumansClient::deleteHuman, this);
+  add_subgoal_server_ = private_nh.advertiseService(
+      reset_simulation_service_name_, &MoveHumansClient::addSubgoal, this);
+  update_goal_server_ = private_nh.advertiseService(
+      reset_simulation_service_name_, &MoveHumansClient::updateGoal, this);
 
   client_thread_ =
       new boost::thread(boost::bind(&MoveHumansClient::clientThread, this));
@@ -225,79 +229,121 @@ bool MoveHumansClient::getHumansGoals(ros::NodeHandle &nh,
   return true;
 }
 
-void MoveHumansClient::newHumanCB(const move_humans::HumanPose &new_human) {
-  boost::unique_lock<boost::mutex> lock(client_mutex_);
-  if (starts_.find(new_human.human_id) != starts_.end()) {
-    ROS_WARN_NAMED(NODE_NAME, "Human %ld already exists", new_human.human_id);
-    return;
-  }
-  starts_[new_human.human_id] = new_human.pose;
-  ROS_INFO_NAMED(NODE_NAME, "Added human %ld", new_human.human_id);
-}
-
-void MoveHumansClient::goalCB(const move_humans::HumanPose &goal) {
-  boost::unique_lock<boost::mutex> lock(client_mutex_);
-  if (starts_.find(goal.human_id) == starts_.end()) {
-    ROS_ERROR_NAMED(NODE_NAME, "Human %ld does not exists in the database, "
-                               "please first add human %ld with a start pose",
-                    goal.human_id, goal.human_id);
-    return;
-  }
-  if (goals_.find(goal.human_id) != goals_.end()) {
-    ROS_INFO_NAMED(NODE_NAME, "Redefining goal pose for human %ld",
-                   goal.human_id);
-  } else {
-    ROS_INFO_NAMED(NODE_NAME, "Adding goal pose for human %ld", goal.human_id);
-  }
-  goals_[goal.human_id] = goal.pose;
-  client_cond_.notify_one();
-}
-
-void MoveHumansClient::subGoalCB(const move_humans::HumanPose &sub_goal) {
-  boost::unique_lock<boost::mutex> lock(client_mutex_);
-  if (starts_.find(sub_goal.human_id) == starts_.end() ||
-      goals_.find(sub_goal.human_id) == goals_.end()) {
-    ROS_ERROR_NAMED(NODE_NAME, "Human %ld does not exists in the database, "
-                               "please first add human %ld with a start pose",
-                    sub_goal.human_id, sub_goal.human_id);
-    return;
-  }
-  if (sub_goals_.find(sub_goal.human_id) != sub_goals_.end()) {
-    sub_goals_[sub_goal.human_id].push_back(sub_goal.pose);
-    ROS_INFO_NAMED(NODE_NAME, "Added additional sub-goal pose for human %ld",
-                   sub_goal.human_id);
-  } else {
-    move_humans::pose_vector sub_goal_vector;
-    sub_goal_vector.push_back(sub_goal.pose);
-    sub_goals_[sub_goal.human_id] = sub_goal_vector;
-    ROS_INFO_NAMED(NODE_NAME, "Added sub-goal pose for human %ld",
-                   sub_goal.human_id);
-  }
-  client_cond_.notify_one();
-}
-
-void MoveHumansClient::removeHumanCB(const std_msgs::UInt64 &human_id) {
-  boost::unique_lock<boost::mutex> lock(client_mutex_);
-  starts_.erase(human_id.data);
-  goals_.erase(human_id.data);
-  sub_goals_.erase(human_id.data);
-  client_cond_.notify_one();
-}
-
-void MoveHumansClient::reInitializeCB(const std_msgs::Empty &empty) {
+bool MoveHumansClient::resetSimulation(std_srvs::Trigger::Request &req,
+                                       std_srvs::Trigger::Response &res) {
   ros::NodeHandle private_nh("~");
   boost::unique_lock<boost::mutex> lock(client_mutex_);
+  std::stringstream message;
   sub_goals_.clear();
   starts_.clear();
   goals_.clear();
   if (!getHumansGoals(private_nh, starts_, goals_)) {
-    ROS_ERROR_NAMED(
-        NODE_NAME,
-        "Failed to read human start-goal positions from the parameter server");
+    message << "Failed to read human start-goal positions from the parameter "
+               "server";
+    ROS_ERROR_STREAM_NAMED(NODE_NAME, message);
     starts_.clear();
     goals_.clear();
+    res.message = message.str();
+    res.success = false;
+  } else {
+    res.success = true;
+    client_cond_.notify_one();
+  }
+  return true;
+}
+
+bool MoveHumansClient::addHuman(move_humans::HumanUpdate::Request &req,
+                                move_humans::HumanUpdate::Response &res) {
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  std::stringstream message;
+  if (starts_.find(req.human_pose.human_id) != starts_.end()) {
+    message << "Human " << req.human_pose.human_id << " already exists";
+    ROS_WARN_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = false;
+  } else {
+    starts_[req.human_pose.human_id] = req.human_pose.pose;
+    message << "Added human " << req.human_pose.human_id;
+    ROS_INFO_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = true;
+  }
+  return true;
+}
+
+bool MoveHumansClient::deleteHuman(move_humans::HumanUpdate::Request &req,
+                                   move_humans::HumanUpdate::Response &res) {
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  std::stringstream message;
+  starts_.erase(req.human_pose.human_id);
+  goals_.erase(req.human_pose.human_id);
+  sub_goals_.erase(req.human_pose.human_id);
+  client_cond_.notify_one();
+  message << "Deleted human " << req.human_pose.human_id;
+  ROS_INFO_STREAM_NAMED(NODE_NAME, message);
+  res.message = message.str();
+  res.success = true;
+  return true;
+}
+
+bool MoveHumansClient::addSubgoal(move_humans::HumanUpdate::Request &req,
+                                  move_humans::HumanUpdate::Response &res) {
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  std::stringstream message;
+  if (starts_.find(req.human_pose.human_id) == starts_.end() ||
+      goals_.find(req.human_pose.human_id) == goals_.end()) {
+    message << "Human " << req.human_pose.human_id
+            << "does not exists in the database, please first add human "
+            << req.human_pose.human_id << " with a start pose";
+    ROS_ERROR_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = false;
+  } else if (sub_goals_.find(req.human_pose.human_id) != sub_goals_.end()) {
+    sub_goals_[req.human_pose.human_id].push_back(req.human_pose.pose);
+    message << "Added another sub-goal pose for human"
+            << req.human_pose.human_id;
+    ROS_INFO_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = true;
+  } else {
+    move_humans::pose_vector sub_goal_vector;
+    sub_goal_vector.push_back(req.human_pose.pose);
+    sub_goals_[req.human_pose.human_id] = sub_goal_vector;
+    message << "Added sub-goal pose for human" << req.human_pose.human_id;
+    ROS_INFO_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = true;
   }
   client_cond_.notify_one();
+  return true;
+}
+
+bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
+                                  move_humans::HumanUpdate::Response &res) {
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  std::stringstream message;
+  if (starts_.find(req.human_pose.human_id) == starts_.end()) {
+    message << "Human " << req.human_pose.human_id
+            << " does not exists in the database, please first add human "
+            << req.human_pose.human_id << "with a start pose";
+    ROS_ERROR_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = false;
+  } else if (goals_.find(req.human_pose.human_id) != goals_.end()) {
+    goals_[req.human_pose.human_id] = req.human_pose.pose;
+    message << "Updated goal pose for human " << req.human_pose.human_id;
+    ROS_INFO_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = true;
+  } else {
+    goals_[req.human_pose.human_id] = req.human_pose.pose;
+    message << "Added goal pose for human " << req.human_pose.human_id;
+    ROS_INFO_STREAM_NAMED(NODE_NAME, message);
+    res.message = message.str();
+    res.success = true;
+  }
+  client_cond_.notify_one();
+  return true;
 }
 
 void MoveHumansClient::feedbackCB(const MoveHumansFeedbackConstPtr &feedback) {
