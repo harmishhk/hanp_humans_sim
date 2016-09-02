@@ -3,6 +3,7 @@
 
 # Definitions
 **/typings/
+move_humans_viz/dist
 
 # Editor
 /.vscode/

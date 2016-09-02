@@ -4,6 +4,7 @@
   "homepage": "https://github.com/harmishhk/hanp_humans_sim/move_humans_viz",
   "version": "0.1.0",
   "globalDependencies": {
+    "eventemitter2": "registry:dt/eventemitter2#0.14.4+20160818004139",
     "roslib": "github:harmishhk/rosjs-typings/roslib/typings.json#125b61a01e261c4bd5e51a488885e09fa074077f",
     "rosmsgs": "github:harmishhk/rosjs-typings/rosmsgs/typings.json#125b61a01e261c4bd5e51a488885e09fa074077f",
     "ros3d": "github:harmishhk/rosjs-typings/ros3d/typings.json#125b61a01e261c4bd5e51a488885e09fa074077f",
