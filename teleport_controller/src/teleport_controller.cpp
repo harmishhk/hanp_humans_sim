@@ -15,12 +15,12 @@
 #define HUMAN_COLOR_B 0.0
 #define MARKER_LIFETIME 4.0
 
-#include <teleport_controller/teleport_controller.h>
 #include <pluginlib/class_list_macros.h>
-#include <nav_msgs/Path.h>
 #include <hanp_msgs/TrackedHumans.h>
 #include <hanp_msgs/TrackedSegmentType.h>
 #include <visualization_msgs/MarkerArray.h>
+
+#include "teleport_controller/teleport_controller.h"
 
 PLUGINLIB_EXPORT_CLASS(teleport_controller::TeleportController,
                        move_humans::ControllerInterface)

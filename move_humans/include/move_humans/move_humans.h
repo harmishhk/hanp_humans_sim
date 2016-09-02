@@ -2,22 +2,18 @@
 #define MOVE_HUMANS_H_
 
 #include <ros/ros.h>
-#include <actionlib/server/simple_action_server.h>
-#include <move_humans/planner_interface.h>
-#include <move_humans/controller_interface.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/PoseArray.h>
-#include <costmap_2d/costmap_2d_ros.h>
-#include <nav_msgs/GetPlan.h>
 #include <pluginlib/class_loader.h>
+#include <actionlib/server/simple_action_server.h>
+#include <costmap_2d/costmap_2d_ros.h>
 #include <std_srvs/Empty.h>
 #include <dynamic_reconfigure/server.h>
-#include <hanp_msgs/TrackedHumans.h>
 
 #include "move_humans/types.h"
-#include "move_humans/MoveHumansConfig.h"
-#include <move_humans/MoveHumansAction.h>
+#include "move_humans/planner_interface.h"
+#include "move_humans/controller_interface.h"
+#include <move_humans/MoveHumansConfig.h>
 #include <move_humans/HumanPose.h>
+#include <move_humans/MoveHumansAction.h>
 
 namespace move_humans {
 enum MoveHumansState { PLANNING, CONTROLLING, IDLE };

@@ -78,11 +78,11 @@ class MoveHumansViz {
 
     // setup human paths clients
     let humanPaths = new ROS3DNAV.PathArray({
-      color: 0x1E90FF,
-      rootObject: this.viewer.scene,
       ros: this.ros,
-      tfClient: this.tfClient,
       topic: humanPathsTopic,
+      tfClient: this.tfClient,
+      rootObject: this.viewer.scene,
+      color: 0x1E90FF,
       width: 5,
     });
 

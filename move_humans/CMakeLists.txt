@@ -5,37 +5,32 @@ set(CMAKE_CXX_COMPILER_ARG1 -std=c++11)
 
 project(move_humans)
 
+## search for dependencies
 find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
-  roscpp
-  pluginlib
+  costmap_2d
   dynamic_reconfigure
-  hanp_msgs
-  nav_core
-  tf
-  std_srvs
+  geometry_msgs
   message_generation
+  nav_core
+  pluginlib
+  roscpp
+  std_srvs
+  tf
 )
-
 find_package(Eigen3 REQUIRED)
 
-## install python modules and global scripts
-# catkin_python_setup()
-
 # add message, serviece and action files from msg, srv and action directories
-
 add_message_files(
   FILES
     HumanPose.msg
     HumanPoseArray.msg
 )
-
 add_service_files(
   FILES
     HumanUpdate.srv
 )
-
 add_action_files(
   FILES
     MoveHumans.action
@@ -61,14 +56,15 @@ catkin_package(
 #     move_humans
   CATKIN_DEPENDS
     actionlib
-    roscpp
-    pluginlib
+    actionlib_msgs
+    costmap_2d
     dynamic_reconfigure
-    hanp_msgs
+    geometry_msgs
     nav_core
-    tf
+    pluginlib
+    roscpp
     std_srvs
-    message_runtime
+    tf
 #   DEPENDS
 #     system_lib
 )
@@ -107,8 +103,8 @@ add_executable(${PROJECT_NAME}_node
 # rename c++ executable without prefix, for shorter version
 set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME ${PROJECT_NAME} PREFIX "")
 
-## cmake target dependencies of the c++ executable
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# cmake target dependencies of the c++ executable
+add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 # libraries to link the target c++ executable against
 target_link_libraries(${PROJECT_NAME}_node
@@ -120,48 +116,15 @@ target_link_libraries(${PROJECT_NAME}_node
 
 ## install ##
 
-## executable scripts (python etc.) for installation
-# install(PROGRAMS
-#   scripts/my_python_script
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+# executables and/or libraries for installation
+install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_node
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
-## executables and/or libraries for installation
-# install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_node
-#   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
-
-## cpp-header files for installation
-# install(DIRECTORY include/${PROJECT_NAME}/
-#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-#   FILES_MATCHING PATTERN "*.h"
-#   PATTERN ".svn" EXCLUDE
-# )
-
-## other files for installation (launch, data, bag files)
-# foreach(dir launch data bags)
-#    install(DIRECTORY ${dir}/
-#       DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/${dir})
-# endforeach(dir)
-
-## other files for installation
-# install(
-#   FILES
-#     myfile1
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
-
-
-
-## testing ##
-
-## add catch based cpp test target
-# catkin_add_catchtest(${PROJECT_NAME}-test test/test_move_humans.cpp)
-# if(TARGET ${PROJECT_NAME}-test)
-#   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
-# endif()
-
-## add nosetest file folders
-# catkin_add_nosetests(test)
+# cpp-header files for installation
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  FILES_MATCHING PATTERN "*.h"
+)

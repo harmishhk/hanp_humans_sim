@@ -2,13 +2,13 @@
 <package>
   <name>multigoal_planner</name>
 
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 
   <description>The multigoal_planner package</description>
 
   <maintainer email="harmish@laas.fr">Harmish Khambhaita</maintainer>
 
-  <!--  <author email="author_email">author_name</author>  -->
+  <!--  <author email="harmish@laas.fr">Harmish Khambhaita</author>  -->
 
   <license>TODO</license>
 
@@ -17,34 +17,24 @@
   <buildtool_depend>catkin</buildtool_depend>
 
   <build_depend>costmap_2d</build_depend>
-  <build_depend>global_planner</build_depend>
   <build_depend>geometry_msgs</build_depend>
+  <build_depend>global_planner</build_depend>
   <build_depend>hanp_msgs</build_depend>
   <build_depend>move_humans</build_depend>
   <build_depend>nav_core</build_depend>
   <build_depend>nav_msgs</build_depend>
-  <build_depend>navfn</build_depend>
-  <build_depend>pcl_ros</build_depend>
   <build_depend>pluginlib</build_depend>
   <build_depend>roscpp</build_depend>
 
   <run_depend>costmap_2d</run_depend>
-  <run_depend>global_planner</run_depend>
   <run_depend>geometry_msgs</run_depend>
+  <run_depend>global_planner</run_depend>
   <run_depend>hanp_msgs</run_depend>
   <run_depend>move_humans</run_depend>
   <run_depend>nav_core</run_depend>
   <run_depend>nav_msgs</run_depend>
-  <run_depend>navfn</run_depend>
-  <run_depend>pcl_ros</run_depend>
   <run_depend>pluginlib</run_depend>
   <run_depend>roscpp</run_depend>
-
-  <!--  <test_depend>some_pkg</test_depend>  -->
-
-  <!--  <conflict>some_pkg</conflict>  -->
-
-  <!--  <replace>some_pkg</replace>  -->
 
   <export>
         <move_humans plugin="${prefix}/planner_plugin.xml" />

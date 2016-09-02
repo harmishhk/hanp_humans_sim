@@ -2,7 +2,7 @@
 #define MOVE_HUMANS_PLANNER_INTERFACE_
 
 #include <costmap_2d/costmap_2d_ros.h>
-#include <geometry_msgs/PoseStamped.h>
+#include <tf/transform_listener.h>
 
 #include "move_humans/types.h"
 

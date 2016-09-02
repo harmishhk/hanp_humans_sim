@@ -2,13 +2,13 @@
 <package>
   <name>hanp_humans_sim</name>
 
-  <version>0.0.1</version>
+  <version>0.1.0</version>
 
   <description>A 2D multi-human simulator with multi-goal planner and teleport controller.</description>
 
   <maintainer email="harmish@laas.fr">Harmish Khambhaita</maintainer>
 
-  <!--<author email="author_email">author_name</author>-->
+  <!--<author email="harmish@laas.fr">Harmish Khambhaita</author>-->
 
   <license>TODO</license>
 

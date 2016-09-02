@@ -1,8 +1,9 @@
 #define NODE_NAME "move_humans"
 
-#include <move_humans/move_humans.h>
+#include <geometry_msgs/PoseArray.h>
 #include <boost/thread.hpp>
-#include <typeinfo>
+
+#include "move_humans/move_humans.h"
 
 namespace move_humans {
 

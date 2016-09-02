@@ -2,14 +2,14 @@
 #define MOVE_HUMANS_CLIENT_H_
 
 #include <ros/ros.h>
-#include <move_humans/MoveHumansAction.h>
-#include <move_humans/types.h>
 #include <actionlib/client/simple_action_client.h>
 #include <tf/transform_listener.h>
-#include <std_msgs/UInt64.h>
-#include <boost/thread.hpp>
 #include <std_srvs/Trigger.h>
+#include <boost/thread.hpp>
+
+#include "move_humans/types.h"
 #include <move_humans/HumanUpdate.h>
+#include <move_humans/MoveHumansAction.h>
 
 namespace move_humans {
 typedef actionlib::SimpleActionClient<move_humans::MoveHumansAction>

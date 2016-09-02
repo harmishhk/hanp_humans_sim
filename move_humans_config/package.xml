@@ -2,32 +2,17 @@
 <package>
   <name>move_humans_config</name>
 
-  <version>0.0.0</version>
+  <version>0.1.0</version>
 
   <description>The move_humans_config package</description>
 
-  <maintainer email="root@laas.fr">root</maintainer>
+  <maintainer email="harmish@laas.fr">Harmish Khambhaita</maintainer>
 
-  <!--  <author email="author_email">author_name</author>  -->
+  <!--  <author email="harmish@laas.fr">Harmish Khambhaita</author>  -->
 
   <license>TODO</license>
 
   <!--  <url website >http://wiki.ors.org/move_humans_config</url>  -->
 
   <buildtool_depend>catkin</buildtool_depend>
-
-  <!--  <build_depend>some_pkg</build_depend>  -->
-
-  <!--  <run_depend>some_pkg</run_depend>  -->
-
-  <!--  <test_depend>some_pkg</test_depend>  -->
-
-  <!--  <conflict>some_pkg</conflict>  -->
-
-  <!--  <replace>some_pkg</replace>  -->
-
-  <export>
-    <!-- <metapackage/> -->
-
-  </export>
 </package>

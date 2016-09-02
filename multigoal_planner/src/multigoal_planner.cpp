@@ -10,11 +10,9 @@
 #include <multigoal_planner/multigoal_planner.h>
 #include <pluginlib/class_list_macros.h>
 #include <global_planner/dijkstra.h>
-#include <global_planner/astar.h>
 #include <global_planner/gradient_path.h>
 #include <global_planner/grid_path.h>
 #include <global_planner/quadratic_calculator.h>
-
 #include <boost/range/adaptor/reversed.hpp>
 
 PLUGINLIB_EXPORT_CLASS(multigoal_planner::MultiGoalPlanner,
@@ -45,7 +43,6 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
 
     p_calc_ = new global_planner::QuadraticCalculator(cx, cy);
     planner_ = new global_planner::DijkstraExpansion(p_calc_, cx, cy);
-    // planner_ = new global_planner::AStarExpansion(p_calc_, cx, cy);
     path_maker_ = new global_planner::GradientPath(p_calc_);
     path_maker_fallback_ = new global_planner::GridPath(p_calc_);
     orientation_filter_ = new global_planner::OrientationFilter();

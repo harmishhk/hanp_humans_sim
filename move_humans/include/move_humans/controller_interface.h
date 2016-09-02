@@ -2,8 +2,6 @@
 #define MOVE_HUMANS_CONTROLLER_INTERFACE_
 
 #include <costmap_2d/costmap_2d_ros.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <hanp_msgs/TrackedHumans.h>
 #include <tf/transform_listener.h>
 
 #include "move_humans/types.h"

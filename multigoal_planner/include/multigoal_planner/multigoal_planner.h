@@ -2,24 +2,15 @@
 #define MULTIGOAL_PLANER_H
 
 #include <ros/ros.h>
-#include <nav_core/base_global_planner.h>
-#include <navfn/navfn.h>
-#include <costmap_2d/costmap_2d.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/Point.h>
-#include <geometry_msgs/PoseArray.h>
-#include <nav_msgs/Path.h>
-#include <hanp_msgs/PathArray.h>
-#include <tf/transform_datatypes.h>
-#include <move_humans/planner_interface.h>
-#include <navfn/potarr_point.h>
-#include <nav_msgs/GetPlan.h>
-#include <pcl_ros/publisher.h>
-#include <move_humans/types.h>
 #include <global_planner/potential_calculator.h>
 #include <global_planner/expander.h>
 #include <global_planner/traceback.h>
 #include <global_planner/orientation_filter.h>
+#include <costmap_2d/costmap_2d.h>
+#include <geometry_msgs/PoseArray.h>
+#include <hanp_msgs/PathArray.h>
+#include <move_humans/types.h>
+#include <move_humans/planner_interface.h>
 
 namespace multigoal_planner {
 class MultiGoalPlanner : public move_humans::PlannerInterface {

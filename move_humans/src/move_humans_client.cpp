@@ -1,16 +1,13 @@
 #define NODE_NAME "move_humans_client"
 #define TIMEOUT 30.0
 #define FRAME_ID "map"
-
 #define RESET_SIMULATION_SERVICE_NAME "reset_simulation"
 #define ADD_HUMAN_SERVICE_NAME "add_human"
 #define DELETE_HUMAN_SERVICE_NAME "delete_human"
 #define ADD_SUBGOAL_SERVICE_NAME "add_sub_goal"
 #define UPDATE_GOAL_SERVICE_NAME "update_goal"
 
-#include <move_humans/move_humans_client.h>
-
-#include <boost/thread.hpp>
+#include "move_humans/move_humans_client.h"
 
 namespace move_humans {
 MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {

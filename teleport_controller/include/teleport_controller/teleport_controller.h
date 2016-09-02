@@ -2,22 +2,14 @@
 #define TELEPORT_CONTROLLER_H_
 
 #include <ros/ros.h>
-#include <costmap_2d/costmap_2d.h>
-#include <costmap_2d/costmap_2d_publisher.h>
 #include <costmap_2d/costmap_2d_ros.h>
-#include <tf/transform_datatypes.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/Pose.h>
-#include <geometry_msgs/PoseArray.h>
-#include <geometry_msgs/Twist.h>
-#include <geometry_msgs/Point.h>
 #include <tf/transform_listener.h>
-#include <boost/thread.hpp>
 #include <dynamic_reconfigure/server.h>
-#include <move_humans/controller_interface.h>
-#include <hanp_msgs/TrackedHumans.h>
-#include <teleport_controller/TeleportControllerConfig.h>
 #include <hanp_msgs/PathArray.h>
+#include <boost/thread.hpp>
+#include <move_humans/controller_interface.h>
+
+#include <teleport_controller/TeleportControllerConfig.h>
 
 namespace teleport_controller {
 
