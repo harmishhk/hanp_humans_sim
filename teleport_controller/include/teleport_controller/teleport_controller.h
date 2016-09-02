@@ -50,13 +50,14 @@ private:
 
   ros::Subscriber controller_plans_sub_;
 
-  ros::Publisher plans_pub_, humans_pub_, humans_poses_pub_;
-  bool visualize_human_poses_;
+  ros::Publisher plans_pub_, humans_pub_, humans_markers_pub_;
+  bool publish_human_markers_;
 
   move_humans::map_pose_vector plans_;
   move_humans::map_pose last_human_poses_;
   move_humans::id_vector reached_goals_;
-  double max_linear_vel_, sq_dist_threshold_, goal_reached_threshold_;
+  double max_linear_vel_, sq_dist_threshold_, goal_reached_threshold_,
+      human_radius_;
   std::string controller_frame_;
 
   boost::mutex controlling_mutex_, configuration_mutex_;

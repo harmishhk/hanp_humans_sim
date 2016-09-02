@@ -1,18 +1,26 @@
 #define NODE_NAME "teleport_controller"
-#define DIST_THRESHOLD 0.5
+#define DIST_THRESHOLD 0.2 // distance threshold for pruning the plan
 #define MAX_LINEAR_VEL 0.7 // m/s
+#define HUMAN_RADIUS 0.25  // m
 #define DEFAUTL_SEGMENT_TYPE hanp_msgs::TrackedSegmentType::TORSO
 #define PLANS_PUB_TOPIC "plans"
 #define HUMANS_PUB_TOPIC "humans"
-#define HUMANS_POSES_PUB_TOPIC "humans_poses"
+#define HUMANS_MARKERS_PUB_TOPIC "human_markers"
 #define CONTROLLER_PLANS_SUB_TOPIC "human_plans"
-#define VISUALIZE_HUMAN_POSES true
+#define PUBLISH_HUMAN_MARKERS true
+#define HUMANS_ARROWS_ID_OFFSET 100
+#define HUMANS_CYLINDERS_HEIGHT 1.5
+#define HUMAN_COLOR_R 0.5
+#define HUMAN_COLOR_G 0.5
+#define HUMAN_COLOR_B 0.0
+#define MARKER_LIFETIME 4.0
 
 #include <teleport_controller/teleport_controller.h>
 #include <pluginlib/class_list_macros.h>
 #include <nav_msgs/Path.h>
 #include <hanp_msgs/TrackedHumans.h>
 #include <hanp_msgs/TrackedSegmentType.h>
+#include <visualization_msgs/MarkerArray.h>
 
 PLUGINLIB_EXPORT_CLASS(teleport_controller::TeleportController,
                        move_humans::ControllerInterface)
@@ -34,15 +42,19 @@ void TeleportController::initialize(std::string name, tf::TransformListener *tf,
     private_nh.param("dist_threshold", dist_threshold);
     sq_dist_threshold_ = dist_threshold * dist_threshold;
     private_nh.param("max_linear_vel", max_linear_vel_, MAX_LINEAR_VEL);
-    private_nh.param("visualize_human_poses", visualize_human_poses_,
-                     VISUALIZE_HUMAN_POSES);
+    private_nh.param("human_radius", human_radius_, HUMAN_RADIUS);
+    private_nh.param("publish_human_markers", publish_human_markers_,
+                     PUBLISH_HUMAN_MARKERS);
 
     plans_pub_ = private_nh.advertise<hanp_msgs::PathArray>(PLANS_PUB_TOPIC, 1);
     humans_pub_ =
         private_nh.advertise<hanp_msgs::TrackedHumans>(HUMANS_PUB_TOPIC, 1);
-    if (visualize_human_poses_) {
-      humans_poses_pub_ = private_nh.advertise<geometry_msgs::PoseArray>(
-          HUMANS_POSES_PUB_TOPIC, 1);
+    if (publish_human_markers_) {
+      humans_markers_pub_ =
+          private_nh.advertise<visualization_msgs::MarkerArray>(
+              HUMANS_MARKERS_PUB_TOPIC, 1);
+      ROS_DEBUG_NAMED(NODE_NAME, "Will %spublish human markers",
+                      publish_human_markers_ ? "" : "not ");
     }
 
     controller_plans_sub_ =
@@ -184,7 +196,8 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
       last_human_poses_[human_id] = current_pose;
 
       // ROS_INFO_COND(human_id == 1, "cp=(%.3f,%.3f)",
-      //               current_pose.pose.position.x, current_pose.pose.position.y);
+      //               current_pose.pose.position.x,
+      //               current_pose.pose.position.y);
     }
   }
 
@@ -277,9 +290,8 @@ bool TeleportController::transformPlans(
   return !transformed_plans.empty();
 }
 
-unsigned int
-TeleportController::prunePlan(const move_humans::pose_vector &plan,
-                              const tf::Stamped<tf::Pose> &cp_tf) {
+unsigned int TeleportController::prunePlan(const move_humans::pose_vector &plan,
+                                           const tf::Stamped<tf::Pose> &cp_tf) {
   unsigned int i = plan.size() - 1;
   double x_diff, y_diff, sq_diff, sq_dist = std::numeric_limits<double>::max();
   while (i > 0) {
@@ -325,29 +337,62 @@ void TeleportController::publishPlans(move_humans::map_pose_vector &plans) {
 
 void TeleportController::publishHumans(move_humans::map_pose &human_poses) {
   hanp_msgs::TrackedHumans humans;
+  visualization_msgs::MarkerArray humans_markers;
   for (auto &pose_kv : human_poses) {
     hanp_msgs::TrackedSegment human_segment;
     human_segment.type = DEFAUTL_SEGMENT_TYPE;
     human_segment.pose.pose = pose_kv.second.pose;
-
+    human_segment.pose.covariance[0] = human_radius_;
+    human_segment.pose.covariance[7] = human_radius_;
     hanp_msgs::TrackedHuman human;
     human.track_id = pose_kv.first;
     human.segments.push_back(human_segment);
 
     humans.humans.push_back(human);
+
+    if (publish_human_markers_) {
+      visualization_msgs::Marker human_arrow, human_cylinder;
+
+      human_arrow.header = pose_kv.second.header;
+      human_arrow.type = visualization_msgs::Marker::ARROW;
+      human_arrow.action = visualization_msgs::Marker::MODIFY;
+      human_arrow.id = pose_kv.first + HUMANS_ARROWS_ID_OFFSET;
+      human_arrow.pose = pose_kv.second.pose;
+      human_arrow.scale.x = human_radius_ * 2.0;
+      human_arrow.scale.y = 0.1;
+      human_arrow.scale.z = 0.1;
+      human_arrow.color.a = 1.0;
+      human_arrow.color.r = HUMAN_COLOR_R;
+      human_arrow.color.g = HUMAN_COLOR_G;
+      human_arrow.color.b = HUMAN_COLOR_B;
+      human_arrow.lifetime = ros::Duration(MARKER_LIFETIME);
+
+      human_cylinder.header = pose_kv.second.header;
+      human_cylinder.type = visualization_msgs::Marker::CYLINDER;
+      human_cylinder.action = visualization_msgs::Marker::MODIFY;
+      human_cylinder.id = pose_kv.first;
+      human_cylinder.pose = pose_kv.second.pose;
+      human_cylinder.pose.position.z += (HUMANS_CYLINDERS_HEIGHT / 2);
+      human_cylinder.scale.x = human_radius_ * 2;
+      human_cylinder.scale.y = human_radius_ * 2;
+      human_cylinder.scale.z = HUMANS_CYLINDERS_HEIGHT;
+      human_cylinder.color.a = 1.0;
+      human_cylinder.color.r = HUMAN_COLOR_R;
+      human_cylinder.color.g = HUMAN_COLOR_G;
+      human_cylinder.color.b = HUMAN_COLOR_B;
+      human_cylinder.lifetime = ros::Duration(MARKER_LIFETIME);
+
+      humans_markers.markers.push_back(human_arrow);
+      humans_markers.markers.push_back(human_cylinder);
+    }
   }
   if (!humans.humans.empty()) {
     humans.header.stamp = ros::Time::now();
     humans.header.frame_id = controller_frame_;
     humans_pub_.publish(humans);
 
-    if (visualize_human_poses_) {
-      geometry_msgs::PoseArray human_pose_array;
-      human_pose_array.header = humans.header;
-      for (auto &pose_kv : human_poses) {
-        human_pose_array.poses.push_back(pose_kv.second.pose);
-      }
-      humans_poses_pub_.publish(human_pose_array);
+    if (publish_human_markers_) {
+      humans_markers_pub_.publish(humans_markers);
     }
   }
 }
