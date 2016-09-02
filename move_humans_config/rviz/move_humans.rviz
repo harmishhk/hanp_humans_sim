@@ -133,6 +133,14 @@ Visualization Manager:
       Topic: /move_humans_node/MultiGoalPlanner/potential
       Unreliable: false
       Value: false
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /move_humans_node/TeleportController/human_markers
+      Name: human markers
+      Namespaces:
+        "": true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -169,10 +177,10 @@ Visualization Manager:
         Z: -1.2849
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 1.0148
+      Pitch: 0.1748
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.98319
+      Yaw: 5.53319
     Saved: ~
 Window Geometry:
   Displays:

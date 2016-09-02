@@ -6,7 +6,7 @@
   <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
 
   <!-- start move_humans node with multigoal_planner and teleport_controller -->
-  <node name="move_humans_node" pkg="move_humans" type="move_humans" output="screen">
+  <node name="move_humans_node" pkg="move_humans" type="move_humans" output="screen" required="true">
     <rosparam file="$(find move_humans_config)/config/move_humans_params.yaml" command="load"/>
 
     <rosparam file="$(find move_humans_config)/config/planner_costmap_params.yaml" command="load" ns="planner_costmap" />
@@ -15,6 +15,7 @@
     <rosparam file="$(find move_humans_config)/config/humans.yaml" command="load"/>
 
     <param name="planner" value="multigoal_planner/MultiGoalPlanner"/>
+    <rosparam file="$(find move_humans_config)/config/teleport_controller_params.yaml" command="load" ns="/move_humans_node/TeleportController"/>
     <param name="controller" value="teleport_controller/TeleportController"/>
   </node>
 
