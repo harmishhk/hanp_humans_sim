@@ -20,8 +20,7 @@
   </node>
 
   <!-- launch rviz if asked -->
-  <arg name="viz" default="false"/>
-  <group if="$(arg viz)">
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find move_humans_config)/rviz/move_humans.rviz"/>
-  </group>
+  <arg name="rviz" default="false"/>
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find move_humans_config)/rviz/move_humans.rviz" if="$(arg rviz)"/>
+  <include file="$(find move_humans_config)/launch/rosbridge.launch" unless="$(arg rviz)"/>
 </launch>
