@@ -1,25 +1,61 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-<meta charset="utf-8"/>
+  <meta charset="utf-8" />
 
-<script type="text/javascript" src="http://cdn.robotwebtools.org/EaselJS/current/easeljs.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/threejs/current/three.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/threejs/current/ColladaLoader.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/ColladaAnimationCompress/current/ColladaLoader2.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/threejs/current/STLLoader.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/EventEmitter2/current/eventemitter2.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/roslibjs/current/roslib.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/ros3djs/current/ros3d.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/ros2djs/current/ros2d.min.js"></script>
-<script type="text/javascript" src="http://cdn.robotwebtools.org/nav2djs/current/nav2d.min.js"></script>
-<script type="text/javascript" src="http://localhost/resources/ros3dnav.js"></script>
+  <!--spectre-->
+  <link rel="stylesheet" href="dist/spectre.min.css" />
 
-<script data-main="moveHumansViz" type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.1/require.min.js"></script>
-<script type="text/javascript" src="http://localhost/moveHumansViz.js"></script>
+  <!--ros-->
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/EaselJS/current/easeljs.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/threejs/current/three.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/threejs/current/ColladaLoader.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/ColladaAnimationCompress/current/ColladaLoader2.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/threejs/current/STLLoader.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/EventEmitter2/current/eventemitter2.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/roslibjs/current/roslib.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/ros3djs/current/ros3d.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/ros2djs/current/ros2d.min.js"></script>
+  <script type="text/javascript" src="http://cdn.robotwebtools.org/nav2djs/current/nav2d.min.js"></script>
+  <script type="text/javascript" src="http://localhost/ros3dnav.js"></script>
+  <script type="text/javascript" src="http://localhost/rosmsgs.js"></script>
+
+  <!--move_humans-->
+  <script type="text/javascript" src="http://localhost/movehumansviz.js"></script>
 </head>
 
-<body>
-  <div id="map"></div>
+<body onload="init()">
+  <div class="container">
+    <div class="columns">
+      <div id="viewer" class="column col-xs-9"></div>
+      <div class="column col-xs-3">
+        <button class="btn btn-block" id="reset-simulation-button">Reset Simulation</button>
+        </br>
+        <div class="input-group">
+          <div class="col-sm-6"><input type="text" class="form-input" placeholder="Human Id" id="add-human-id" /></div>
+          <button class="btn btn-primary input-group-btn empty-action" id="add-human-button">Add Human</button>
+        </div>
+        <div class="input-group">
+          <div class="col-sm-6"><input type="text" class="form-input" placeholder="Human Id" id="delete-human-id" /></div>
+          <button class="btn btn-primary input-group-btn empty-action" id="delete-human-button">Delete Human</button>
+        </div>
+        <div class="input-group">
+          <div class="col-sm-6"><input type="text" class="form-input" placeholder="Human Id" id="add-sub-goal-id" /></div>
+          <button class="btn btn-primary input-group-btn empty-action" id="add-sub-goal-button">Add Sub-Goal</button>
+        </div>
+        <div class="input-group">
+          <div class="col-sm-6"><input type="text" class="form-input" placeholder="Human Id" id="update-goal-id" /></div>
+          <button class="btn btn-primary input-group-btn empty-action" id="update-goal-button">Update Goal</button>
+        </div>
+        </br>
+        <div class="form-group">
+          <label class="form-label" for="message-area">Message</label>
+          <textarea readonly class="form-input" id="message-area" placeholder="" rows="3"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
+
 </html>
