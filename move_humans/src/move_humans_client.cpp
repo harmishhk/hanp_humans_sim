@@ -43,13 +43,13 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
   reset_simulation_server_ = private_nh.advertiseService(
       reset_simulation_service_name_, &MoveHumansClient::resetSimulation, this);
   add_human_server_ = private_nh.advertiseService(
-      reset_simulation_service_name_, &MoveHumansClient::addHuman, this);
+      add_human_service_name_, &MoveHumansClient::addHuman, this);
   delete_human_server_ = private_nh.advertiseService(
-      reset_simulation_service_name_, &MoveHumansClient::deleteHuman, this);
+      delete_human_service_name_, &MoveHumansClient::deleteHuman, this);
   add_subgoal_server_ = private_nh.advertiseService(
-      reset_simulation_service_name_, &MoveHumansClient::addSubgoal, this);
+      add_subgoal_service_name_, &MoveHumansClient::addSubgoal, this);
   update_goal_server_ = private_nh.advertiseService(
-      reset_simulation_service_name_, &MoveHumansClient::updateGoal, this);
+      update_goal_service_name_, &MoveHumansClient::updateGoal, this);
 
   client_thread_ =
       new boost::thread(boost::bind(&MoveHumansClient::clientThread, this));
@@ -325,7 +325,7 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
   if (starts_.find(req.human_pose.human_id) == starts_.end()) {
     message << "Human " << req.human_pose.human_id
             << " does not exists in the database, please first add human "
-            << req.human_pose.human_id << "with a start pose";
+            << req.human_pose.human_id << " with a start pose";
     ROS_ERROR_STREAM_NAMED(NODE_NAME, message);
     res.message = message.str();
     res.success = false;
