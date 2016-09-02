@@ -1,7 +1,7 @@
 namespace MoveHumans {
   export class HumanPose extends ROSLIB.Message {
-    human_id: number;
-    pose: GeometryMsgs.PoseStamped;
+    public human_id: number;
+    public pose: GeometryMsgs.PoseStamped;
 
     constructor(values: {
       human_id: number,
@@ -12,8 +12,8 @@ namespace MoveHumans {
   }
 
   export class HumanPoseArray extends ROSLIB.Message {
-    human_id: number;
-    poses: GeometryMsgs.PoseStamped[];
+    public human_id: number;
+    public poses: GeometryMsgs.PoseStamped[];
 
     constructor(values: {
       human_id: number,
@@ -24,16 +24,18 @@ namespace MoveHumans {
   }
 
   export class HumanUpdateRequest extends ROSLIB.ServiceRequest {
-    human_pose: MoveHumans.HumanPose;
+    public human_pose: MoveHumans.HumanPose;
 
-    constructor(values: { human_pose: MoveHumans.HumanPose }) {
+    constructor(values: {
+      human_pose: MoveHumans.HumanPose
+    }) {
       super(values);
     }
   }
 
   export class HumanUpdateResponse extends ROSLIB.ServiceResponse {
-    success: boolean;
-    message: string;
+    public success: boolean;
+    public message: string;
 
     constructor(values: {
       success: boolean;
@@ -44,6 +46,6 @@ namespace MoveHumans {
   }
 }
 
-declare module 'MoveHumans' {
+declare module "MoveHumans" {
   export = MoveHumans;
 }
