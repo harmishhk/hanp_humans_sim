@@ -6,6 +6,7 @@
 #define DELETE_HUMAN_SERVICE_NAME "delete_human"
 #define ADD_SUBGOAL_SERVICE_NAME "add_sub_goal"
 #define UPDATE_GOAL_SERVICE_NAME "update_goal"
+#define SUBGOAL_REACHING_THRESHOLD 0.1 // m
 
 #include "move_humans/move_humans_client.h"
 
@@ -347,6 +348,22 @@ void MoveHumansClient::feedbackCB(const MoveHumansFeedbackConstPtr &feedback) {
   boost::unique_lock<boost::mutex> lock(client_mutex_);
   for (auto &current_pose : feedback->current_poses) {
     starts_[current_pose.human_id] = current_pose.pose;
+
+    auto sub_goals_it = sub_goals_.find(current_pose.human_id);
+    if (sub_goals_it != sub_goals_.end()) {
+      auto sub_goals = sub_goals_it->second;
+      if (sub_goals.size() > 0) {
+        auto &sub_goal_pose = sub_goals.front();
+        double dist = hypot(
+            sub_goal_pose.pose.position.x - current_pose.pose.pose.position.x,
+            sub_goal_pose.pose.position.y - current_pose.pose.pose.position.y);
+        if (dist < SUBGOAL_REACHING_THRESHOLD) {
+          sub_goals_.erase(sub_goals_it);
+          ROS_DEBUG_NAMED(NODE_NAME, "Erased a sub goal for %ld",
+                          current_pose.human_id);
+        }
+      }
+    }
   }
 }
 
