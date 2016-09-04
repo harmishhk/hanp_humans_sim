@@ -18,7 +18,7 @@ public:
 
   virtual bool computeHumansStates(move_humans::map_pose &humans) = 0;
 
-  virtual bool areGoalsReached() = 0;
+  virtual bool areGoalsReached(move_humans::id_vector &reached_humans) = 0;
 
 protected:
   ControllerInterface() {}

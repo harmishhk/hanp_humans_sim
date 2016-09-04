@@ -25,12 +25,12 @@ public:
 
   bool makePlans(const move_humans::map_pose &starts,
                  const move_humans::map_pose &goals,
-                 move_humans::map_pose_vector &plans);
+                 move_humans::map_pose_vectors &plans);
 
   bool makePlans(const move_humans::map_pose &starts,
                  const move_humans::map_pose_vector &sub_goals,
                  const move_humans::map_pose &goals,
-                 move_humans::map_pose_vector &plans);
+                 move_humans::map_pose_vectors &plans);
 
 private:
   tf::TransformListener *tf_;

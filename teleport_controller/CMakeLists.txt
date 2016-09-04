@@ -10,7 +10,6 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   geometry_msgs
   hanp_msgs
-  hanp_prediction
   move_humans
   nav_core
   nav_msgs
@@ -67,7 +66,6 @@ catkin_package(
     dynamic_reconfigure
     geometry_msgs
     hanp_msgs
-    hanp_prediction
     move_humans
     nav_core
     nav_msgs

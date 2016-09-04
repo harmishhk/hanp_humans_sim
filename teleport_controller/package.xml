@@ -21,7 +21,6 @@
   <build_depend>dynamic_reconfigure</build_depend>
   <build_depend>geometry_msgs</build_depend>
   <build_depend>hanp_msgs</build_depend>
-  <build_depend>hanp_prediction</build_depend>
   <build_depend>move_humans</build_depend>
   <build_depend>nav_core</build_depend>
   <build_depend>nav_msgs</build_depend>
@@ -36,7 +35,6 @@
   <run_depend>dynamic_reconfigure</run_depend>
   <run_depend>geometry_msgs</run_depend>
   <run_depend>hanp_msgs</run_depend>
-  <run_depend>hanp_prediction</run_depend>
   <run_depend>move_humans</run_depend>
   <run_depend>nav_core</run_depend>
   <run_depend>nav_msgs</run_depend>

@@ -17,12 +17,12 @@ public:
 
   virtual bool makePlans(const move_humans::map_pose &starts,
                          const move_humans::map_pose &goals,
-                         move_humans::map_pose_vector &plans) = 0;
+                         move_humans::map_pose_vectors &plans) = 0;
 
   virtual bool makePlans(const move_humans::map_pose &starts,
                          const move_humans::map_pose_vector &sub_goals,
                          const move_humans::map_pose &goals,
-                         move_humans::map_pose_vector &plans) = 0;
+                         move_humans::map_pose_vectors &plans) = 0;
 
 protected:
   PlannerInterface() {}

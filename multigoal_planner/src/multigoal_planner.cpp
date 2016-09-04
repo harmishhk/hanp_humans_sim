@@ -86,7 +86,7 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
 
 bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
                                  const move_humans::map_pose &goals,
-                                 move_humans::map_pose_vector &plans) {
+                                 move_humans::map_pose_vectors &plans) {
   move_humans::map_pose_vector sub_goals;
   return makePlans(starts, sub_goals, goals, plans);
 }
@@ -94,7 +94,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
 bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
                                  const move_humans::map_pose_vector &sub_goals,
                                  const move_humans::map_pose &goals,
-                                 move_humans::map_pose_vector &plans) {
+                                 move_humans::map_pose_vectors &plans) {
   boost::mutex::scoped_lock lock(planning_mutex_);
   auto tolerance = default_tolerance_;
 
@@ -133,6 +133,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
 
   outlineMap(costmap_->getCharMap(), nx, ny, costmap_2d::LETHAL_OBSTACLE);
 
+  move_humans::map_pose_vector combined_plans;
   for (auto start_kv : starts) {
     auto &human_id = start_kv.first;
     ROS_INFO_NAMED(NODE_NAME, "Planning for humans %ld", human_id);
@@ -213,6 +214,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       continue;
     }
 
+    move_humans::pose_vectors plan_vector;
     move_humans::pose_vector combined_plan;
     for (auto i = 0; i < (points_x.size() - 1); i++) {
       bool found_legal = planner_->calculatePotentials(
@@ -223,16 +225,20 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
         move_humans::pose_vector plan;
         if (getPlanFromPotential(points_x[i], points_y[i], points_x[i + 1],
                                  points_y[i + 1], plan)) {
+          plan_vector.push_back(plan);
           combined_plan.insert(combined_plan.end(), plan.begin(), plan.end());
+
         } else {
           ROS_ERROR_NAMED(NODE_NAME, "Failed to get a plan from potential when "
                                      "a legal potential was found");
           combined_plan.clear();
+          plan_vector.clear();
           break;
         }
       } else {
         ROS_ERROR_NAMED(NODE_NAME, "Failed to plan for human %ld", human_id);
         combined_plan.clear();
+        plan_vector.clear();
         break;
       }
     }
@@ -243,12 +249,16 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       geometry_msgs::PoseStamped goal_copy = goal;
       goal_copy.header.stamp = ros::Time::now();
       combined_plan.push_back(goal_copy);
-      plans[human_id] = combined_plan;
+      plan_vector.back().push_back(goal_copy);
+      plans[human_id] = plan_vector;
+      combined_plans[human_id] = combined_plan;
+      ROS_INFO_NAMED(NODE_NAME, "Added %ld plans for %ld human",
+                     plan_vector.size(), human_id);
     }
   }
 
   delete potential_array_;
-  publishPlans(plans);
+  publishPlans(combined_plans);
 
   return !plans.empty();
 }

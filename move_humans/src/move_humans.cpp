@@ -36,9 +36,9 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   clear_costmaps_srv_ = private_nh.advertiseService(
       "clear_costmaps", &MoveHumans::clearCostmapsService, this);
 
-  planner_plans_ = new move_humans::map_pose_vector();
-  latest_plans_ = new move_humans::map_pose_vector();
-  controller_plans_ = new move_humans::map_pose_vector();
+  planner_plans_ = new move_humans::map_pose_vectors();
+  latest_plans_ = new move_humans::map_pose_vectors();
+  controller_plans_ = new move_humans::map_pose_vectors();
 
   planner_costmap_ros_ = new costmap_2d::Costmap2DROS("planner_costmap", tf_);
   planner_costmap_ros_->pause();
@@ -347,7 +347,17 @@ void MoveHumans::actionCB(
       latest_plans_ = controller_plans;
       lock.unlock();
 
-      if (!controller_->setPlans(*controller_plans_)) {
+      current_controller_plans_.clear();
+      for (auto plan_vector_kv : *controller_plans_) {
+        auto human_id = plan_vector_kv.first;
+        auto plan_vector = plan_vector_kv.second;
+        ROS_INFO_NAMED(NODE_NAME, "Got %ld plans for %ld human",
+                       plan_vector.size(), human_id);
+        if (plan_vector.size() > 0) {
+          current_controller_plans_[human_id] = plan_vector.front();
+        }
+      }
+      if (!controller_->setPlans(current_controller_plans_)) {
         ROS_ERROR_NAMED(NODE_NAME,
                         "Failed to pass the plans to the controller, aborting");
         mhas_->setAborted(move_humans::MoveHumansResult(),
@@ -396,7 +406,44 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
   }
 
   case move_humans::MoveHumansState::CONTROLLING: {
-    if (controller_->areGoalsReached()) {
+    move_humans::id_vector reached_humans;
+    if (!controller_->areGoalsReached(reached_humans)) {
+      ROS_INFO_NAMED(NODE_NAME, "Controller failure");
+      mhas_->setAborted(move_humans::MoveHumansResult(), "Controller failure");
+      resetState();
+      return true;
+    }
+
+    if (reached_humans.size() > 0) {
+      current_controller_plans_.clear();
+      for (auto human_id : reached_humans) {
+        auto plan_vector_it = controller_plans_->find(human_id);
+        if (plan_vector_it != controller_plans_->end()) {
+          auto &plan_vector = plan_vector_it->second;
+          if (plan_vector.size() > 0) {
+            plan_vector.erase(plan_vector.begin());
+            if (plan_vector.size() > 0) {
+              current_controller_plans_[human_id] = plan_vector.front();
+            }
+          }
+        }
+      }
+      if (current_controller_plans_.size() > 0) {
+        if (!controller_->setPlans(current_controller_plans_)) {
+          ROS_ERROR_NAMED(
+              NODE_NAME,
+              "Failed to pass the plans to the controller, aborting");
+        }
+      }
+    }
+
+    bool all_human_goals_reached = true;
+    for (auto &plan_vector_kv : *controller_plans_) {
+      if (plan_vector_kv.second.size() > 0) {
+        all_human_goals_reached = false;
+      }
+    }
+    if (all_human_goals_reached) {
       ROS_INFO_NAMED(NODE_NAME, "All goals reached!");
       mhas_->setSucceeded(move_humans::MoveHumansResult(), "Goals reached");
       resetState();

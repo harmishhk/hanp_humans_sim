@@ -27,7 +27,7 @@ public:
 
   bool computeHumansStates(move_humans::map_pose &humans);
 
-  bool areGoalsReached();
+  bool areGoalsReached(move_humans::id_vector &reached_humans);
 
   bool isInitialized() { return initialized_; }
 

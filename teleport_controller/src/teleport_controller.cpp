@@ -93,12 +93,19 @@ bool TeleportController::setPlans(const move_humans::map_pose_vector &plans) {
     return false;
   }
 
-  reached_goals_.clear();
-  last_human_poses_.clear();
-  plans_.clear();
-  plans_ = plans;
+  ROS_INFO_NAMED(NODE_NAME, "Got new plan for %ld human%s", plans.size(),
+                 plans.size() > 1 ? "s" : "");
 
-  ROS_INFO_NAMED(NODE_NAME, "Got new plans");
+  for (auto &plan_kv : plans) {
+    auto &human_id = plan_kv.first;
+    auto &plan = plan_kv.second;
+
+    // TODO: just remove ids for new plans from reached_goals_
+    reached_goals_.clear();
+    last_human_poses_.erase(human_id);
+    plans_[human_id] = plan;
+  }
+
   return true;
 }
 
@@ -210,18 +217,14 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
   return true;
 }
 
-bool TeleportController::areGoalsReached() {
+bool TeleportController::areGoalsReached(
+    move_humans::id_vector &reached_humans) {
   if (!isInitialized()) {
     ROS_ERROR_NAMED(NODE_NAME, "This controller has not been initialized");
     return false;
   }
 
-  for (auto &plan_kv : plans_) {
-    if (std::find(reached_goals_.begin(), reached_goals_.end(),
-                  plan_kv.first) == reached_goals_.end()) {
-      return false;
-    }
-  }
+  reached_humans = reached_goals_;
   return true;
 }
 

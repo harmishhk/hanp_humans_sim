@@ -52,8 +52,9 @@ private:
   pluginlib::ClassLoader<move_humans::PlannerInterface> planner_loader_;
   pluginlib::ClassLoader<move_humans::ControllerInterface> controller_loader_;
 
-  move_humans::map_pose_vector *planner_plans_, *controller_plans_,
+  move_humans::map_pose_vectors *planner_plans_, *controller_plans_,
       *latest_plans_;
+  move_humans::map_pose_vector current_controller_plans_;
 
   MoveHumansState state_;
   bool setup_, shutdown_costmaps_, new_global_plans_, publish_feedback_;
