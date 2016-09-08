@@ -24,6 +24,8 @@ public:
                   costmap_2d::Costmap2DROS *costmap_ros);
 
   bool setPlans(const move_humans::map_pose_vector &plans);
+  bool setPlans(const move_humans::map_pose_vector &plans,
+                const move_humans::map_twist_vector &twists);
 
   bool computeHumansStates(move_humans::map_pose &humans);
 
@@ -40,16 +42,18 @@ private:
   costmap_2d::Costmap2DROS *costmap_ros_;
   tf::TransformListener *tf_;
 
-  ros::Subscriber controller_plans_sub_;
-
   ros::Publisher plans_pub_, humans_pub_, humans_markers_pub_;
   bool publish_human_markers_;
 
   move_humans::map_pose_vector plans_;
-  move_humans::map_pose last_human_poses_;
+  move_humans::map_twist_vector twists_;
+  move_humans::map_pose_twist last_human_pts_;
+  move_humans::map_size last_traversed_indices_;
+  move_humans::map_pose_vector last_transformed_plans_;
+  move_humans::map_twist_vector last_transformed_twists_;
   move_humans::id_vector reached_goals_;
-  double max_linear_vel_, sq_dist_threshold_, goal_reached_threshold_,
-      human_radius_;
+  double max_linear_vel_, max_angular_vel_, max_linear_acc_, max_angular_acc_,
+      sq_dist_threshold_, goal_reached_threshold_, human_radius_;
   std::string controller_frame_;
 
   boost::mutex controlling_mutex_, configuration_mutex_;
@@ -58,17 +62,15 @@ private:
   teleport_controller::TeleportControllerConfig default_config_;
 
   bool transformPlans(const move_humans::map_pose_vector &plans,
-                      const move_humans::map_pose &current_poses,
-                      move_humans::map_pose_vector &transformed_plans);
-  unsigned int prunePlan(const move_humans::pose_vector &plan,
-                         const tf::Stamped<tf::Pose> &cp_tf);
-  double dist_sq(const geometry_msgs::Pose &pose1,
-                 const geometry_msgs::Pose &pose2);
+                      const move_humans::map_twist_vector &twists,
+                      move_humans::map_pose_vector &transformed_plans,
+                      move_humans::map_twist_vector &transformed_twists);
+  size_t prunePlan(const move_humans::pose_vector &plan,
+                   const geometry_msgs::PoseStamped &current_pose,
+                   size_t begin_index);
 
   void publishPlans(move_humans::map_pose_vector &plans);
-  void publishHumans(move_humans::map_pose &human_poses);
-
-  void controllerPlansCB(const hanp_msgs::PathArray &paths);
+  void publishHumans(move_humans::map_pose_twist &human_pts);
 };
 }; // namespace move_humans
 

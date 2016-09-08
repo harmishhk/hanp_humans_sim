@@ -46,6 +46,7 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
     path_maker_ = new global_planner::GradientPath(p_calc_);
     path_maker_fallback_ = new global_planner::GridPath(p_calc_);
     orientation_filter_ = new global_planner::OrientationFilter();
+    orientation_filter_->setMode(global_planner::OrientationMode::FORWARD);
 
     ros::NodeHandle private_nh("~/" + name);
     private_nh.param("convert_offset", convert_offset_,
@@ -243,16 +244,21 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       }
     }
 
-    // orientation_filter_->processPath(start, combined_plan);
-
     if (!combined_plan.empty()) {
       geometry_msgs::PoseStamped goal_copy = goal;
       goal_copy.header.stamp = ros::Time::now();
       combined_plan.push_back(goal_copy);
+      orientation_filter_->processPath(combined_plan.front(), combined_plan);
+
       plan_vector.back().push_back(goal_copy);
+      for (auto &plan : plan_vector) {
+        if (!plan.empty()) {
+          orientation_filter_->processPath(plan.front(), plan);
+        }
+      }
       plans[human_id] = plan_vector;
       combined_plans[human_id] = combined_plan;
-      ROS_INFO_NAMED(NODE_NAME, "Added %ld plans for %ld human",
+      ROS_DEBUG_NAMED(NODE_NAME, "Added %ld plans for %ld human",
                      plan_vector.size(), human_id);
     }
   }
@@ -269,18 +275,21 @@ void MultiGoalPlanner::publishPlans(move_humans::map_pose_vector &plans) {
     nav_msgs::Path path;
     if (!plan_kv.second.empty()) {
       path_array.ids.push_back(plan_kv.first);
-      path.header = plan_kv.second[0].header;
+      path.header.stamp = plan_kv.second[0].header.stamp;
+      path.header.frame_id = plan_kv.second[0].header.frame_id;
       path.poses = plan_kv.second;
       path_array.paths.push_back(path);
     }
   }
   if (!path_array.paths.empty()) {
-    path_array.header = path_array.paths[0].header;
+    path_array.header.stamp = path_array.paths[0].header.stamp;
+    path_array.header.frame_id = path_array.paths[0].header.frame_id;
     plans_pub_.publish(path_array);
 
     if (visualize_paths_poses_) {
       geometry_msgs::PoseArray paths_poses;
-      paths_poses.header = path_array.header;
+      paths_poses.header.stamp = path_array.header.stamp;
+      paths_poses.header.frame_id = path_array.header.frame_id;
       for (auto &path : path_array.paths) {
         for (int i = 0; i < path.poses.size(); i++) {
           auto pose_copy = path.poses[i].pose;

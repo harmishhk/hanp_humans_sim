@@ -15,6 +15,8 @@ public:
                           costmap_2d::Costmap2DROS *costmap_ros) = 0;
 
   virtual bool setPlans(const move_humans::map_pose_vector &plans) = 0;
+  virtual bool setPlans(const move_humans::map_pose_vector &plans,
+                        const move_humans::map_twist_vector &twists) = 0;
 
   virtual bool computeHumansStates(move_humans::map_pose &humans) = 0;
 

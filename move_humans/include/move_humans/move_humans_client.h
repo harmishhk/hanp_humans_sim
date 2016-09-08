@@ -37,11 +37,11 @@ private:
   bool addHuman(move_humans::HumanUpdate::Request &req,
                 move_humans::HumanUpdate::Response &res);
   bool deleteHuman(move_humans::HumanUpdate::Request &req,
-                move_humans::HumanUpdate::Response &res);
+                   move_humans::HumanUpdate::Response &res);
   bool addSubgoal(move_humans::HumanUpdate::Request &req,
-                move_humans::HumanUpdate::Response &res);
+                  move_humans::HumanUpdate::Response &res);
   bool updateGoal(move_humans::HumanUpdate::Request &req,
-                move_humans::HumanUpdate::Response &res);
+                  move_humans::HumanUpdate::Response &res);
 
   void feedbackCB(const MoveHumansFeedbackConstPtr &feedback);
 
