@@ -1,4 +1,8 @@
 #define NODE_NAME "move_humans"
+#define CLEARA_COSTMAPS_SERVICE_NAME "clear_costmaps"
+#define FOLLOW_EXTERNAL_PATHS_SERVICE_NAME "follow_external_paths"
+#define CONTROLLER_TRAJS_SUB_TOPIC "external_human_plans"
+// #define EXTERNAL_PATH_DIST_THRESHOLD 0.2
 
 #include <geometry_msgs/PoseArray.h>
 #include <boost/thread.hpp>
@@ -14,7 +18,8 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
       controller_loader_("move_humans", "move_humans::ControllerInterface"),
       planner_plans_(NULL), latest_plans_(NULL), controller_plans_(NULL),
       run_planner_(false), setup_(false), new_global_plans_(false),
-      publish_feedback_(false), p_freq_change_(false), c_freq_change_(false) {
+      publish_feedback_(false), p_freq_change_(false), c_freq_change_(false),
+      use_external_trajs_(false), new_external_controller_trajs_(false) {
   ros::NodeHandle private_nh("~");
 
   mhas_ = new MoveHumansActionServer(
@@ -33,8 +38,15 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
 
   current_goals_pub_ =
       private_nh.advertise<geometry_msgs::PoseArray>("current_goals", 0);
+
+  controller_trajs_sub_ = private_nh.subscribe(
+      CONTROLLER_TRAJS_SUB_TOPIC, 1, &MoveHumans::controllerPathsCB, this);
+
   clear_costmaps_srv_ = private_nh.advertiseService(
-      "clear_costmaps", &MoveHumans::clearCostmapsService, this);
+      CLEARA_COSTMAPS_SERVICE_NAME, &MoveHumans::clearCostmapsService, this);
+  follow_external_path_srv_ =
+      private_nh.advertiseService(FOLLOW_EXTERNAL_PATHS_SERVICE_NAME,
+                                  &MoveHumans::followExternalPaths, this);
 
   planner_plans_ = new move_humans::map_pose_vectors();
   latest_plans_ = new move_humans::map_pose_vectors();
@@ -351,12 +363,20 @@ void MoveHumans::actionCB(
       for (auto plan_vector_kv : *controller_plans_) {
         auto human_id = plan_vector_kv.first;
         auto plan_vector = plan_vector_kv.second;
-        ROS_INFO_NAMED(NODE_NAME, "Got %ld plans for %ld human",
-                       plan_vector.size(), human_id);
+        // ROS_INFO_NAMED(NODE_NAME, "Got %ld plans for %ld human",
+        //                plan_vector.size(), human_id);
         if (plan_vector.size() > 0) {
           current_controller_plans_[human_id] = plan_vector.front();
+
+          move_humans::pose_vector current_plan;
+          for (auto &plan : plan_vector) {
+            current_plan.insert(current_plan.end(), plan.begin(), plan.end());
+          }
+          current_planner_plans_[human_id] = current_plan;
+          cp_indices_[human_id] = 0;
         }
       }
+
       if (!controller_->setPlans(current_controller_plans_)) {
         ROS_ERROR_NAMED(NODE_NAME,
                         "Failed to pass the plans to the controller, aborting");
@@ -414,9 +434,46 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
       return true;
     }
 
+    current_controller_plans_.clear();
+    current_controller_twists_.clear();
+
+    boost::unique_lock<boost::mutex> lock(external_trajs_mutex_);
+    if (use_external_trajs_ && new_external_controller_trajs_) {
+      new_external_controller_trajs_ = false;
+      if (external_controller_trajs_->ids.size() ==
+          external_controller_trajs_->trajectories.size()) {
+        for (size_t i = 0; i < external_controller_trajs_->ids.size(); ++i) {
+          auto &human_id = external_controller_trajs_->ids[i];
+          if (external_controller_trajs_->trajectories.empty()) {
+            continue;
+          }
+          if (external_controller_trajs_->trajectories[i].poses.size() !=
+              external_controller_trajs_->trajectories[i].twists.size()) {
+            ROS_WARN_NAMED(NODE_NAME, "Size of poses and twist do not match "
+                                      "for external trajectory for human %ld",
+                           human_id);
+            continue;
+          }
+
+          current_controller_plans_[human_id] =
+              external_controller_trajs_->trajectories[i].poses;
+          current_controller_twists_[human_id] =
+              external_controller_trajs_->trajectories[i].twists;
+          reached_humans.erase(std::remove(reached_humans.begin(),
+                                           reached_humans.end(), human_id),
+                               reached_humans.end());
+          ROS_DEBUG_NAMED(NODE_NAME, "Using external tajectory for human %ld",
+                          human_id);
+        }
+      } else {
+        ROS_WARN_NAMED(NODE_NAME, "Size fo ids and trajectories do not match, "
+                                  "ignoring external trajectories");
+      }
+    }
+    lock.unlock();
+
     if (reached_humans.size() > 0) {
-      current_controller_plans_.clear();
-      for (auto human_id : reached_humans) {
+      for (auto &human_id : reached_humans) {
         auto plan_vector_it = controller_plans_->find(human_id);
         if (plan_vector_it != controller_plans_->end()) {
           auto &plan_vector = plan_vector_it->second;
@@ -428,12 +485,13 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
           }
         }
       }
-      if (current_controller_plans_.size() > 0) {
-        if (!controller_->setPlans(current_controller_plans_)) {
-          ROS_ERROR_NAMED(
-              NODE_NAME,
-              "Failed to pass the plans to the controller, aborting");
-        }
+    }
+
+    if (current_controller_plans_.size() > 0) {
+      if (!controller_->setPlans(current_controller_plans_,
+                                 current_controller_twists_)) {
+        ROS_ERROR_NAMED(NODE_NAME,
+                        "Failed to pass the plans to the controller, aborting");
       }
     }
 
@@ -452,13 +510,12 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 
     boost::unique_lock<costmap_2d::Costmap2D::mutex_t> costmap_lock(
         *(controller_costmap_ros_->getCostmap()->getMutex()));
-    move_humans::map_pose humans;
-    if (controller_->computeHumansStates(humans)) {
+    if (controller_->computeHumansStates(current_human_poses)) {
       ROS_DEBUG_NAMED(NODE_NAME,
                       "Got valid human positions from the controller");
       if (publish_feedback_) {
         move_humans::MoveHumansFeedback feedback;
-        for (auto &pose_kv : humans) {
+        for (auto &pose_kv : current_human_poses) {
           move_humans::HumanPose human_pose;
           human_pose.human_id = pose_kv.first;
           human_pose.pose = pose_kv.second;
@@ -722,5 +779,28 @@ bool MoveHumans::clearCostmapsService(std_srvs::Empty::Request &req,
   planner_costmap_ros_->resetLayers();
   controller_costmap_ros_->resetLayers();
   return true;
+}
+
+bool MoveHumans::followExternalPaths(std_srvs::SetBool::Request &req,
+                                     std_srvs::SetBool::Response &res) {
+  std::string message = req.data ? "F" : "Not f";
+  message += "ollowing external paths";
+  ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
+  res.success = true;
+  res.message = message;
+  use_external_trajs_ = req.data;
+  return true;
+}
+
+void MoveHumans::controllerPathsCB(
+    const hanp_msgs::TrajectoryArrayConstPtr traj_array) {
+  if (traj_array->ids.size() != traj_array->trajectories.size()) {
+    ROS_ERROR_NAMED(NODE_NAME,
+                    "Erroneous external trajecotry array message, ignoring");
+    return;
+  }
+  boost::mutex::scoped_lock(external_trajs_mutex_);
+  external_controller_trajs_ = traj_array;
+  new_external_controller_trajs_ = true;
 }
 };

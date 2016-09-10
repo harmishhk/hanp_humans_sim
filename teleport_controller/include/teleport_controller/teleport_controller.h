@@ -71,6 +71,13 @@ private:
 
   void publishPlans(move_humans::map_pose_vector &plans);
   void publishHumans(move_humans::map_pose_twist &human_pts);
+
+  enum point_advancing_type { ACCUMULATIVE, DIRECT };
+  point_advancing_type point_advance_method_ =
+      point_advancing_type::ACCUMULATIVE;
+
+  ros::Time last_calc_time_;
+  bool reset_time_ = true;
 };
 }; // namespace move_humans
 

@@ -19,6 +19,8 @@
 #define DEFAULT_CONTROLLER_FRAME "map"
 #define M_PI_2 1.57
 #define MAX_START_DIST 1.0 // meters
+#define LINEAR_DIST_EPS 0.001
+#define ANGULAR_DIST_EPS 0.001
 
 #include <pluginlib/class_list_macros.h>
 #include <hanp_msgs/TrackedHumans.h>
@@ -46,7 +48,6 @@ void TeleportController::initialize(std::string name, tf::TransformListener *tf,
     if (controller_frame_.compare("") == 0) {
       controller_frame_ = DEFAULT_CONTROLLER_FRAME;
     }
-    ROS_INFO("controller frame is %s", controller_frame_.c_str());
 
     double dist_threshold = DIST_THRESHOLD;
     private_nh.param("dist_threshold", dist_threshold);
@@ -108,7 +109,7 @@ bool TeleportController::setPlans(const move_humans::map_pose_vector &plans,
     return false;
   }
 
-  ROS_DEBUG_NAMED(NODE_NAME, "Got %ld new human-plan%s", plans.size(),
+  ROS_INFO_NAMED(NODE_NAME, "Got %ld new human-plan%s", plans.size(),
                  plans.size() > 1 ? "s" : "");
 
   for (auto &plan_kv : plans) {
@@ -136,6 +137,15 @@ bool TeleportController::setPlans(const move_humans::map_pose_vector &plans,
 }
 
 bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
+  auto now = ros::Time::now();
+  if (reset_time_) {
+    last_calc_time_ = now;
+    reset_time_ = false;
+    return true;
+  }
+  double time_diff_sec = (now - last_calc_time_).toSec();
+  last_calc_time_ = now;
+
   move_humans::map_pose_vector transformed_plans;
   move_humans::map_twist_vector transformed_twists;
   if (!transformPlans(plans_, twists_, transformed_plans, transformed_twists)) {
@@ -146,7 +156,6 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
   geometry_msgs::TwistStamped nominal_twist;
   nominal_twist.twist.linear.x = max_linear_vel_;
   nominal_twist.twist.angular.z = max_angular_vel_;
-  auto now = ros::Time::now();
   for (auto &plan_kv : transformed_plans) {
     auto &human_id = plan_kv.first;
     auto &transformed_plan = plan_kv.second;
@@ -154,7 +163,7 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
     if (transformed_plan.empty()) {
       ROS_ERROR_NAMED(NODE_NAME, "Transformed plan is empty for human %ld",
                       human_id);
-      reached_goals_[human_id] = true;
+      reached_goals_.push_back(human_id);
       continue;
     }
 
@@ -177,140 +186,255 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
       last_human_pt.second = last_human_pts_it->second.second;
     } else {
       last_human_pt.first = transformed_plan.front();
-      last_human_pt.first.header.stamp = now;
+      // last_human_pt.first.header.stamp = now;
       // if (transformed_twist_v != nullptr) {
       //   last_human_pt.second = transformed_twist_v->front();
       // } else {
       //   last_human_pt.second = nominal_twist;
       // }
     }
-    auto &last_pose = last_human_pt.first.pose;
-    auto &last_twist = last_human_pt.second.twist;
 
+    size_t begin_index;
     auto last_traversed_indices_it = last_traversed_indices_.find(human_id);
-    size_t begin_index =
-        (last_traversed_indices_it != last_traversed_indices_.end())
-            ? last_traversed_indices_it->second
-            : 0;
-
-    if (begin_index == 0) {
+    if (last_traversed_indices_it != last_traversed_indices_.end()) {
+      begin_index = last_traversed_indices_it->second;
+    } else {
+      begin_index = 0;
       auto &start_pose = transformed_plan.front().pose;
-      double start_dist =
-          std::hypot(start_pose.position.x - last_pose.position.x,
-                     start_pose.position.y - last_pose.position.y);
+      double start_dist = std::hypot(
+          start_pose.position.x - last_human_pt.first.pose.position.x,
+          start_pose.position.y - last_human_pt.first.pose.position.y);
       if (start_dist > MAX_START_DIST) {
-        ROS_DEBUG_NAMED(NODE_NAME, "Reseting human %ld controller", human_id);
+        ROS_INFO_NAMED(NODE_NAME, "Resetting human %ld controller", human_id);
+        ROS_INFO(
+            "plan start x=%.2f, y=%.2f, last pose x=%.2f, y=%.2f, dist=%.2f",
+            start_pose.position.x, start_pose.position.y,
+            last_human_pt.first.pose.position.x,
+            last_human_pt.first.pose.position.y, start_dist);
         last_human_pt.first = transformed_plan.front();
-        last_human_pt.first.header.stamp = now;
       }
-      if (transformed_twist_v != nullptr) {
+      if (transformed_twist_v != nullptr &&
+          transformed_twist_v->front().twist.linear.x > -10) {
         last_human_pt.second = transformed_twist_v->front();
       } else {
         last_human_pt.second = nominal_twist;
       }
     }
 
+    auto &last_pose = last_human_pt.first.pose;
+    auto &last_twist = last_human_pt.second.twist;
+    ROS_INFO("last pose x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f",
+             last_pose.position.x, last_pose.position.y,
+             tf::getYaw(last_pose.orientation), last_twist.linear.x,
+             last_twist.angular.z);
+
     size_t new_begin_index =
         prunePlan(transformed_plan, last_human_pt.first, begin_index);
-    last_traversed_indices_[human_id] = new_begin_index;
+    // last_traversed_indices_[human_id] = new_begin_index;
     new_begin_index++;
-
-    ROS_INFO_COND(human_id == 3, "starting from %ld of %ld", new_begin_index,
-                  transformed_plan.size());
-
-    // transformed_plan.erase(transformed_plan.begin(),
-    //                        transformed_plan.begin() + new_begin_index);
-
-    double time_diff_sec = (now - last_human_pt.first.header.stamp).toSec();
 
     double linear_vel, linear_dist, linear_time, angular_vel, angular_dist,
         angular_time, last_total_time = 0.0, total_time = 0.0;
-    while (new_begin_index < transformed_plan.size()) {
-      auto &next_pose = transformed_plan[new_begin_index].pose;
-      auto &next_twist =
-          (transformed_twist_v != nullptr &&
-           (*transformed_twist_v)[new_begin_index].twist.linear.x < -100.0)
-              ? (*transformed_twist_v)[new_begin_index].twist
-              : nominal_twist.twist;
-      if (last_twist.linear.x != 0) {
-        linear_vel = last_twist.linear.x < 0
-                         ? std::max(last_twist.linear.x, -max_linear_vel_)
-                         : std::min(last_twist.linear.x, max_linear_vel_);
-        linear_dist = std::hypot(next_pose.position.x - last_pose.position.x,
-                                 next_pose.position.y - last_pose.position.y);
-        linear_time = (linear_dist / linear_vel);
-      } else {
-        linear_time = std::numeric_limits<double>::infinity();
+    ROS_INFO("new begin index before %ld of %ld", new_begin_index,
+             transformed_plan.size());
+
+    if (point_advance_method_ == point_advancing_type::ACCUMULATIVE) {
+      while (new_begin_index < transformed_plan.size()) {
+        auto &next_pose = transformed_plan[new_begin_index].pose;
+        auto &next_twist =
+            (transformed_twist_v != nullptr &&
+             (*transformed_twist_v)[new_begin_index].twist.linear.x > -10.0)
+                ? (*transformed_twist_v)[new_begin_index].twist
+                : nominal_twist.twist;
+        if (last_twist.linear.x != 0) {
+          linear_vel = last_twist.linear.x < 0
+                           ? std::max(last_twist.linear.x, -max_linear_vel_)
+                           : std::min(last_twist.linear.x, max_linear_vel_);
+          linear_dist = std::hypot(next_pose.position.x - last_pose.position.x,
+                                   next_pose.position.y - last_pose.position.y);
+          linear_time = std::abs(linear_dist / linear_vel);
+        } else {
+          linear_time = 0;
+          linear_dist = 0;
+        }
+
+        if (last_twist.angular.z != 0) {
+          angular_vel = last_twist.angular.z < 0
+                            ? std::max(last_twist.angular.z, -max_angular_vel_)
+                            : std::min(last_twist.angular.z, max_angular_vel_);
+          angular_dist = std::abs(tf::getYaw(next_pose.orientation) -
+                                  tf::getYaw(last_pose.orientation));
+          angular_time = std::abs(angular_dist / angular_vel);
+        } else {
+          angular_time = 0;
+          angular_dist = 0;
+        }
+
+        if (linear_time == 0 && angular_time == 0) {
+          total_time += std::numeric_limits<double>::infinity();
+        } else {
+          total_time += std::max(linear_time, angular_time);
+        }
+
+        if (total_time > time_diff_sec) {
+          break;
+        }
+
+        last_pose = next_pose;
+        last_twist = next_twist;
+        last_total_time = total_time;
+        new_begin_index++;
       }
+    } else if (point_advance_method_ == point_advancing_type::DIRECT) {
+      auto begin_pose = last_pose;
+      linear_vel = last_twist.linear.x < 0
+                       ? std::max(last_twist.linear.x, -max_linear_vel_)
+                       : std::min(last_twist.linear.x, max_linear_vel_);
+      angular_vel = last_twist.angular.z < 0
+                        ? std::max(last_twist.angular.z, -max_angular_vel_)
+                        : std::min(last_twist.angular.z, max_angular_vel_);
+      while (new_begin_index < transformed_plan.size()) {
+        auto &next_pose = transformed_plan[new_begin_index].pose;
+        auto &next_twist =
+            (transformed_twist_v != nullptr &&
+             (*transformed_twist_v)[new_begin_index].twist.linear.x > -10.0)
+                ? (*transformed_twist_v)[new_begin_index].twist
+                : nominal_twist.twist;
+        if (linear_vel != 0) {
+          linear_dist =
+              std::hypot(next_pose.position.x - begin_pose.position.x,
+                         next_pose.position.y - begin_pose.position.y);
+          linear_time = std::abs(linear_dist / linear_vel);
+        } else {
+          linear_time = 0;
+          linear_dist = 0;
+        }
 
-      if (last_twist.angular.z != 0) {
-        angular_vel = last_twist.angular.z < 0
-                          ? std::max(last_twist.angular.z, -max_angular_vel_)
-                          : std::min(last_twist.angular.z, max_angular_vel_);
-        angular_dist = std::abs(tf::getYaw(next_pose.orientation) -
-                                tf::getYaw(last_pose.orientation));
-        angular_time = (angular_dist / angular_vel);
-      } else {
-        angular_time = std::numeric_limits<double>::infinity();
+        if (angular_vel != 0) {
+          angular_dist = std::abs(tf::getYaw(next_pose.orientation) -
+                                  tf::getYaw(begin_pose.orientation));
+          angular_time = std::abs(angular_dist / angular_vel);
+        } else {
+          angular_time = 0;
+          angular_dist = 0;
+        }
+
+        if (linear_time == 0 && angular_time == 0) {
+          total_time = std::numeric_limits<double>::infinity();
+        } else {
+          total_time = std::max(linear_time, angular_time);
+        }
+        if (total_time > time_diff_sec) {
+          break;
+        }
+
+        last_pose = next_pose;
+        last_twist = next_twist;
+        last_total_time = total_time;
+        new_begin_index++;
       }
-
-      total_time += std::max(linear_time, angular_time);
-
-      if (total_time > time_diff_sec) {
-        break;
-      }
-
-      last_pose = next_pose;
-      last_twist = next_twist;
-      last_total_time = total_time;
-      new_begin_index++;
+    } else {
+      ROS_ERROR_NAMED(NODE_NAME, "logical error");
+      continue;
     }
+    ROS_INFO("new begin index after %ld of %ld", new_begin_index,
+             transformed_plan.size());
+    last_traversed_indices_[human_id] = new_begin_index - 1;
 
     if (new_begin_index < transformed_plan.size()) {
       double ep_time = time_diff_sec - last_total_time;
       auto &next_pose = transformed_plan[new_begin_index].pose;
+      auto &next_twist =
+          (transformed_twist_v != nullptr &&
+           (*transformed_twist_v)[new_begin_index].twist.linear.x > -10.0)
+              ? (*transformed_twist_v)[new_begin_index].twist
+              : nominal_twist.twist;
 
-      // ROS_INFO("after loop\nlast_pose: x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, "
-      //          "ang=%.2f\nnext_pose: x=%.2f, y=%.2f, theta=%.2f",
-      //          last_pose.position.x, last_pose.position.y,
-      //          tf::getYaw(last_pose.orientation), last_twist.linear.x,
-      //          last_twist.angular.z, next_pose.position.x, next_pose.position.y,
-      //          tf::getYaw(next_pose.orientation));
+      ROS_INFO("pose n-1 x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f",
+               last_pose.position.x, last_pose.position.y,
+               tf::getYaw(last_pose.orientation), last_twist.linear.x,
+               last_twist.angular.z);
+      ROS_INFO("pose n+1 x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f",
+               next_pose.position.x, next_pose.position.y,
+               tf::getYaw(next_pose.orientation), next_twist.linear.x,
+               next_twist.angular.z);
 
-      double linear_dist_ratio = (last_twist.linear.x * ep_time) / linear_dist;
+      double linear_dist_ratio;
+      if (std::abs(linear_dist) > LINEAR_DIST_EPS) {
+        linear_dist_ratio = (last_twist.linear.x * ep_time) / linear_dist;
+      } else {
+        linear_dist_ratio = 0.0;
+      }
+
       if (linear_dist_ratio < 1.0) {
         last_pose.position.x +=
             linear_dist_ratio * (next_pose.position.x - last_pose.position.x);
         last_pose.position.y +=
             linear_dist_ratio * (next_pose.position.y - last_pose.position.y);
+        last_twist.linear.x +=
+            linear_dist_ratio * (next_twist.linear.x - last_twist.linear.x);
       } else {
         last_pose.position = next_pose.position;
+        last_twist.linear = next_twist.linear;
       }
 
-      auto angular_dist_ratio = (last_twist.angular.z * ep_time) / angular_dist;
+      double angular_dist_ratio;
+      if (std::abs(angular_dist) > ANGULAR_DIST_EPS) {
+        angular_dist_ratio = (last_twist.angular.z * ep_time) / angular_dist;
+      } else {
+        angular_dist_ratio = 0.0;
+      }
       if (angular_dist_ratio < 1.0) {
         double theta = tf::getYaw(last_pose.orientation);
         theta += angular_dist_ratio * (tf::getYaw(next_pose.orientation) -
                                        tf::getYaw(last_pose.orientation));
         last_pose.orientation = tf::createQuaternionMsgFromYaw(theta);
+        last_twist.angular.z +=
+            angular_dist_ratio * (next_twist.angular.z - last_twist.angular.z);
       } else {
         last_pose.orientation = next_pose.orientation;
+        last_twist.angular = next_twist.angular;
       }
+
+      ROS_INFO("ep=%.2f, lin_dist=%.2f, lin_ratio= %.2f, ang_dist=%.2f, "
+               "ang_ratio=%.2f",
+               ep_time, linear_dist, linear_dist_ratio, angular_dist,
+               angular_dist_ratio);
+
+      transformed_plan.erase(transformed_plan.begin(),
+                             transformed_plan.begin() + new_begin_index);
+
+      // if (transformed_twist_v != nullptr) {
+      //   ROS_INFO_COND(human_id == 1,
+      //                 "after the loop\nlast_pose: x=%.2f, y=%.2f, theta=%.2f,
+      //                 "
+      //                 "lin=%.2f, ang=%.2f\nnext_pose: x=%.2f, y=%.2f, "
+      //                 "theta=%.2f\ntwist: lin=%.2f, ang=%.2f\nnew begin index
+      //                 "
+      //                 "= %ld\nratio lin=%.2f, ang=%.2f",
+      //                 last_pose.position.x, last_pose.position.y,
+      //                 tf::getYaw(last_pose.orientation), last_twist.linear.x,
+      //                 last_twist.angular.z, next_pose.position.x,
+      //                 next_pose.position.y,
+      //                 tf::getYaw(next_pose.orientation),
+      //                 (*transformed_twist_v)[new_begin_index].twist.linear.x,
+      //                 (*transformed_twist_v)[new_begin_index].twist.angular.z,
+      //                 new_begin_index, linear_dist_ratio,
+      //                 angular_dist_ratio);
+      // }
     } else {
       reached_goals_.push_back(human_id);
       last_twist.linear.x = 0.0;
       last_twist.angular.z = 0.0;
     }
 
+    ROS_INFO("new pose x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f\n",
+             last_pose.position.x, last_pose.position.y,
+             tf::getYaw(last_pose.orientation), last_twist.linear.x,
+             last_twist.angular.z);
+
     last_human_pt.first.header.stamp = now;
     last_human_pt.second.header.stamp = now;
-
-    // ROS_INFO_COND(
-    //     human_id == 1,
-    //     "human1 pose: x=%.2f, y=%.2f, theta=%.2f, vel: lin=%.2f, ang=%.2f",
-    //     last_pose.position.x, last_pose.position.y,
-    //     tf::getYaw(last_pose.orientation), last_twist.linear.x,
-    //     last_twist.angular.z);
 
     last_human_pts_[human_id] = last_human_pt;
   }
@@ -319,8 +443,17 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
     humans[last_pt_kv.first] = last_pt_kv.second.first;
   }
 
-  publishPlans(transformed_plans); // TODO: cut the plans with new_begin index
-  publishHumans(last_human_pts_);
+  for (auto &human_id : reached_goals_) {
+    last_human_pts_.erase(human_id);
+    transformed_plans.erase(human_id);
+  }
+
+  if (last_human_pts_.empty()) {
+    reset_time_ = true;
+  }
+
+  publishPlans(transformed_plans);
+  publishHumans(last_human_pts_); // TODO: move this fucntion to move_humans.cpp
   return true;
 }
 
@@ -353,6 +486,11 @@ bool TeleportController::transformPlans(
 
     if (plan[0].header.frame_id == "") {
       ROS_ERROR_NAMED(NODE_NAME, "Plan frame is empty for human %ld", human_id);
+      continue;
+    }
+
+    if (std::find(reached_goals_.begin(), reached_goals_.end(), human_id) !=
+        reached_goals_.end()) {
       continue;
     }
 

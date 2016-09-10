@@ -6,7 +6,10 @@
 #include <actionlib/server/simple_action_server.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <std_srvs/Empty.h>
+#include <std_srvs/SetBool.h>
 #include <dynamic_reconfigure/server.h>
+#include <hanp_msgs/PathArray.h>
+#include <hanp_msgs/TrajectoryArray.h>
 
 #include "move_humans/types.h"
 #include "move_humans/planner_interface.h"
@@ -43,6 +46,16 @@ private:
 
   ros::Publisher current_goals_pub_;
 
+  bool use_external_trajs_, new_external_controller_trajs_;
+  ros::Subscriber controller_trajs_sub_;
+  void controllerPathsCB(const hanp_msgs::TrajectoryArrayConstPtr traj_array);
+  hanp_msgs::TrajectoryArrayConstPtr external_controller_trajs_;
+
+  ros::ServiceServer follow_external_path_srv_;
+  std::string follow_external_path_service_name_;
+  bool followExternalPaths(std_srvs::SetBool::Request &req,
+                           std_srvs::SetBool::Response &res);
+
   dynamic_reconfigure::Server<move_humans::MoveHumansConfig> *dsrv_;
   move_humans::MoveHumansConfig last_config_;
   move_humans::MoveHumansConfig default_config_;
@@ -54,7 +67,11 @@ private:
 
   move_humans::map_pose_vectors *planner_plans_, *controller_plans_,
       *latest_plans_;
-  move_humans::map_pose_vector current_controller_plans_;
+  move_humans::map_pose_vector current_controller_plans_,
+      current_planner_plans_;
+  move_humans::map_size cp_indices_;
+  move_humans::map_twist_vector current_controller_twists_;
+  move_humans::map_pose current_human_poses;
 
   MoveHumansState state_;
   bool setup_, shutdown_costmaps_, new_global_plans_, publish_feedback_;
@@ -63,7 +80,7 @@ private:
   bool p_freq_change_, c_freq_change_;
 
   bool run_planner_;
-  boost::mutex planner_mutex_;
+  boost::mutex planner_mutex_, external_trajs_mutex_;
   boost::condition_variable planner_cond_;
   move_humans::map_pose planner_starts_, planner_goals_;
   move_humans::map_pose_vector planner_sub_goals_;
