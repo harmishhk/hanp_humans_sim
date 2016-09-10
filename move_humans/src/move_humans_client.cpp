@@ -6,7 +6,7 @@
 #define DELETE_HUMAN_SERVICE_NAME "delete_human"
 #define ADD_SUBGOAL_SERVICE_NAME "add_sub_goal"
 #define UPDATE_GOAL_SERVICE_NAME "update_goal"
-#define SUBGOAL_REACHING_THRESHOLD 0.1 // m
+#define GOAL_REACHING_THRESHOLD 0.1 // m
 
 #include "move_humans/move_humans_client.h"
 
@@ -94,18 +94,39 @@ void MoveHumansClient::clientThread() {
 
     move_humans::MoveHumansGoal goal;
     for (auto &start_kv : starts_) {
+      if (std::find(reached_goals_.begin(), reached_goals_.end(),
+                    start_kv.first) != reached_goals_.end()) {
+        continue;
+      }
+      if (goals_.find(start_kv.first) == goals_.end()) {
+        continue;
+      }
       move_humans::HumanPose start_human_pose;
       start_human_pose.human_id = start_kv.first;
       start_human_pose.pose = start_kv.second;
       goal.start_poses.push_back(start_human_pose);
     }
     for (auto &goal_kv : goals_) {
+      if (std::find(reached_goals_.begin(), reached_goals_.end(),
+                    goal_kv.first) != reached_goals_.end()) {
+        continue;
+      }
       move_humans::HumanPose goal_human_pose;
       goal_human_pose.human_id = goal_kv.first;
       goal_human_pose.pose = goal_kv.second;
       goal.goal_poses.push_back(goal_human_pose);
     }
     for (auto &sub_goals_kv : sub_goals_) {
+      if (std::find(reached_goals_.begin(), reached_goals_.end(),
+                    sub_goals_kv.first) != reached_goals_.end()) {
+        continue;
+      }
+      if (starts_.find(sub_goals_kv.first) == starts_.end()) {
+        continue;
+      }
+      if (goals_.find(sub_goals_kv.first) == goals_.end()) {
+        continue;
+      }
       move_humans::HumanPoseArray sub_goals_human_pose_array;
       sub_goals_human_pose_array.human_id = sub_goals_kv.first;
       sub_goals_human_pose_array.poses = sub_goals_kv.second;
@@ -235,6 +256,7 @@ bool MoveHumansClient::resetSimulation(std_srvs::Trigger::Request &req,
   sub_goals_.clear();
   starts_.clear();
   goals_.clear();
+  reached_goals_.clear();
   if (!getHumansGoals(private_nh, starts_, goals_)) {
     message +=
         "Failed to read human start-goal positions from the parameter server";
@@ -279,6 +301,9 @@ bool MoveHumansClient::deleteHuman(move_humans::HumanUpdate::Request &req,
   starts_.erase(req.human_pose.human_id);
   goals_.erase(req.human_pose.human_id);
   sub_goals_.erase(req.human_pose.human_id);
+  reached_goals_.erase(std::remove(reached_goals_.begin(), reached_goals_.end(),
+                                   req.human_pose.human_id),
+                       reached_goals_.end());
   client_cond_.notify_one();
   message += "Deleted human " + std::to_string(req.human_pose.human_id);
   ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
@@ -301,6 +326,10 @@ bool MoveHumansClient::addSubgoal(move_humans::HumanUpdate::Request &req,
     res.success = false;
   } else if (sub_goals_.find(req.human_pose.human_id) != sub_goals_.end()) {
     sub_goals_[req.human_pose.human_id].push_back(req.human_pose.pose);
+    reached_goals_.erase(std::remove(reached_goals_.begin(),
+                                     reached_goals_.end(),
+                                     req.human_pose.human_id),
+                         reached_goals_.end());
     message += "Added another sub-goal pose for human" +
                std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
@@ -310,8 +339,12 @@ bool MoveHumansClient::addSubgoal(move_humans::HumanUpdate::Request &req,
     move_humans::pose_vector sub_goal_vector;
     sub_goal_vector.push_back(req.human_pose.pose);
     sub_goals_[req.human_pose.human_id] = sub_goal_vector;
-    message +=
-        "Added sub-goal pose for human" + std::to_string(req.human_pose.human_id);
+    reached_goals_.erase(std::remove(reached_goals_.begin(),
+                                     reached_goals_.end(),
+                                     req.human_pose.human_id),
+                         reached_goals_.end());
+    message += "Added sub-goal pose for human" +
+               std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
     res.message = message;
     res.success = true;
@@ -333,6 +366,10 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
     res.success = false;
   } else if (goals_.find(req.human_pose.human_id) != goals_.end()) {
     goals_[req.human_pose.human_id] = req.human_pose.pose;
+    reached_goals_.erase(std::remove(reached_goals_.begin(),
+                                     reached_goals_.end(),
+                                     req.human_pose.human_id),
+                         reached_goals_.end());
     message += "Updated goal pose for human " +
                std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
@@ -340,6 +377,10 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
     res.success = true;
   } else {
     goals_[req.human_pose.human_id] = req.human_pose.pose;
+    reached_goals_.erase(std::remove(reached_goals_.begin(),
+                                     reached_goals_.end(),
+                                     req.human_pose.human_id),
+                         reached_goals_.end());
     message +=
         "Added goal pose for human " + std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
@@ -363,11 +404,22 @@ void MoveHumansClient::feedbackCB(const MoveHumansFeedbackConstPtr &feedback) {
         double dist = hypot(
             sub_goal_pose.pose.position.x - current_pose.pose.pose.position.x,
             sub_goal_pose.pose.position.y - current_pose.pose.pose.position.y);
-        if (dist < SUBGOAL_REACHING_THRESHOLD) {
+        if (dist < GOAL_REACHING_THRESHOLD) {
           sub_goals_.erase(sub_goals_it);
           ROS_DEBUG_NAMED(NODE_NAME, "Erased a sub goal for %ld",
                           current_pose.human_id);
         }
+      }
+    }
+
+    auto goals_it = goals_.find(current_pose.human_id);
+    if (goals_it != goals_.end()) {
+      auto goal_pose = goals_it->second;
+      double dist =
+          hypot(goal_pose.pose.position.x - current_pose.pose.pose.position.x,
+                goal_pose.pose.position.y - current_pose.pose.pose.position.y);
+      if (dist < GOAL_REACHING_THRESHOLD) {
+        reached_goals_.push_back(current_pose.human_id);
       }
     }
   }

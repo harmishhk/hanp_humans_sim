@@ -52,6 +52,7 @@ private:
 
   move_humans::map_pose starts_, goals_;
   move_humans::map_pose_vector sub_goals_;
+  move_humans::id_vector reached_goals_;
 
   bool getHumansGoals(ros::NodeHandle &nh, move_humans::map_pose &starts,
                       move_humans::map_pose &goals);
