@@ -435,7 +435,7 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
     }
 
     current_controller_plans_.clear();
-    current_controller_twists_.clear();
+    current_controller_trajectories_.clear();
 
     boost::unique_lock<boost::mutex> lock(external_trajs_mutex_);
     if (use_external_trajs_ && new_external_controller_trajs_) {
@@ -444,21 +444,8 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
           external_controller_trajs_->trajectories.size()) {
         for (size_t i = 0; i < external_controller_trajs_->ids.size(); ++i) {
           auto &human_id = external_controller_trajs_->ids[i];
-          if (external_controller_trajs_->trajectories.empty()) {
-            continue;
-          }
-          if (external_controller_trajs_->trajectories[i].poses.size() !=
-              external_controller_trajs_->trajectories[i].twists.size()) {
-            ROS_WARN_NAMED(NODE_NAME, "Size of poses and twist do not match "
-                                      "for external trajectory for human %ld",
-                           human_id);
-            continue;
-          }
-
-          current_controller_plans_[human_id] =
-              external_controller_trajs_->trajectories[i].poses;
-          current_controller_twists_[human_id] =
-              external_controller_trajs_->trajectories[i].twists;
+          auto &human_trajectory = external_controller_trajs_->trajectories[i];
+          current_controller_trajectories_[human_id] = human_trajectory;
           reached_humans.erase(std::remove(reached_humans.begin(),
                                            reached_humans.end(), human_id),
                                reached_humans.end());
@@ -487,9 +474,10 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
       }
     }
 
-    if (current_controller_plans_.size() > 0) {
+    if (current_controller_plans_.size() > 0 ||
+        current_controller_trajectories_.size() > 0) {
       if (!controller_->setPlans(current_controller_plans_,
-                                 current_controller_twists_)) {
+                                 current_controller_trajectories_)) {
         ROS_ERROR_NAMED(NODE_NAME,
                         "Failed to pass the plans to the controller, aborting");
       }

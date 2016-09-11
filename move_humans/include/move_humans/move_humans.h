@@ -70,7 +70,7 @@ private:
   move_humans::map_pose_vector current_controller_plans_,
       current_planner_plans_;
   move_humans::map_size cp_indices_;
-  move_humans::map_twist_vector current_controller_twists_;
+  move_humans::map_trajectory current_controller_trajectories_;
   move_humans::map_pose current_human_poses;
 
   MoveHumansState state_;

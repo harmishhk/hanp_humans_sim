@@ -25,7 +25,7 @@ public:
 
   bool setPlans(const move_humans::map_pose_vector &plans);
   bool setPlans(const move_humans::map_pose_vector &plans,
-                const move_humans::map_twist_vector &twists);
+                const move_humans::map_trajectory &twists);
 
   bool computeHumansStates(move_humans::map_pose &humans);
 
@@ -46,11 +46,10 @@ private:
   bool publish_human_markers_;
 
   move_humans::map_pose_vector plans_;
-  move_humans::map_twist_vector twists_;
-  move_humans::map_pose_twist last_human_pts_;
+  move_humans::map_trajectory trajs_;
+  move_humans::map_traj_point last_traj_points_;
   move_humans::map_size last_traversed_indices_;
-  move_humans::map_pose_vector last_transformed_plans_;
-  move_humans::map_twist_vector last_transformed_twists_;
+  move_humans::map_trajectory last_transformed_trajs_;
   move_humans::id_vector reached_goals_;
   double max_linear_vel_, max_angular_vel_, max_linear_acc_, max_angular_acc_,
       sq_dist_threshold_, goal_reached_threshold_, human_radius_;
@@ -65,12 +64,31 @@ private:
                       const move_humans::map_twist_vector &twists,
                       move_humans::map_pose_vector &transformed_plans,
                       move_humans::map_twist_vector &transformed_twists);
-  size_t prunePlan(const move_humans::pose_vector &plan,
-                   const geometry_msgs::PoseStamped &current_pose,
-                   size_t begin_index);
+  bool transformPlansAndTrajs(const move_humans::map_pose_vector &plans,
+                              const move_humans::map_trajectory &trajs,
+                              move_humans::map_trajectory &transformed_trajs);
+
+  // size_t prunePlan(const move_humans::pose_vector &plan,
+  //                  const geometry_msgs::PoseStamped &current_pose,
+  //                  size_t begin_index);
+  // size_t prunePlan(const move_humans::pose_vector &plan,
+  //                  const geometry_msgs::Pose &pose, size_t begin_index);
+
+  bool getProjectedPose(const hanp_msgs::Trajectory &traj,
+                        const size_t begin_index,
+                        const geometry_msgs::Vector3 &pose,
+                        geometry_msgs::Vector3 &projected_pose,
+                        size_t &next_pose_index);
+
+  bool projectPoint(const geometry_msgs::Vector3 &line_point1,
+                    const geometry_msgs::Vector3 &line_point2,
+                    const geometry_msgs::Vector3 &point,
+                    geometry_msgs::Vector3 &porjected_point);
 
   void publishPlans(move_humans::map_pose_vector &plans);
-  void publishHumans(move_humans::map_pose_twist &human_pts);
+  void publishPlansFromTrajs(const move_humans::map_trajectory &trajs);
+  // void publishHumans(move_humans::map_pose_twist &human_pts);
+  void publishHumans(const move_humans::map_traj_point &human_pts);
 
   enum point_advancing_type { ACCUMULATIVE, DIRECT };
   point_advancing_type point_advance_method_ =
