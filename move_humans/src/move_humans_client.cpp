@@ -82,7 +82,7 @@ void MoveHumansClient::clientThread() {
   }
   lock.unlock();
 
-  ROS_INFO_NAMED(NODE_NAME, "Seding initial goals");
+  ROS_DEBUG_NAMED(NODE_NAME, "Sending initial goals");
   mhac_->sendGoal(goal, MoveHumansActionClient::SimpleDoneCallback(),
                   MoveHumansActionClient::SimpleActiveCallback(),
                   boost::bind(&MoveHumansClient::feedbackCB, this, _1));
@@ -134,7 +134,7 @@ void MoveHumansClient::clientThread() {
     }
     lock.unlock();
 
-    ROS_INFO_NAMED(NODE_NAME, "Seding new goals");
+    ROS_DEBUG_NAMED(NODE_NAME, "Sending new goals");
     mhac_->sendGoal(goal, MoveHumansActionClient::SimpleDoneCallback(),
                     MoveHumansActionClient::SimpleActiveCallback(),
                     boost::bind(&MoveHumansClient::feedbackCB, this, _1));

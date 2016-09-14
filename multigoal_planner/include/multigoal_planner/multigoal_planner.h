@@ -8,7 +8,7 @@
 #include <global_planner/orientation_filter.h>
 #include <costmap_2d/costmap_2d.h>
 #include <geometry_msgs/PoseArray.h>
-#include <hanp_msgs/PathArray.h>
+#include <hanp_msgs/HumanPathArray.h>
 #include <move_humans/types.h>
 #include <move_humans/planner_interface.h>
 

@@ -8,8 +8,7 @@
 #include <std_srvs/Empty.h>
 #include <std_srvs/SetBool.h>
 #include <dynamic_reconfigure/server.h>
-#include <hanp_msgs/PathArray.h>
-#include <hanp_msgs/TrajectoryArray.h>
+#include <hanp_msgs/HumanTrajectoryArray.h>
 
 #include "move_humans/types.h"
 #include "move_humans/planner_interface.h"
@@ -44,12 +43,14 @@ private:
   boost::shared_ptr<move_humans::PlannerInterface> planner_;
   boost::shared_ptr<move_humans::ControllerInterface> controller_;
 
-  ros::Publisher current_goals_pub_;
+  ros::Publisher current_goals_pub_, humans_pub_, humans_markers_pub_;
+  bool publish_human_markers_;
 
   bool use_external_trajs_, new_external_controller_trajs_;
   ros::Subscriber controller_trajs_sub_;
-  void controllerPathsCB(const hanp_msgs::TrajectoryArrayConstPtr traj_array);
-  hanp_msgs::TrajectoryArrayConstPtr external_controller_trajs_;
+  void
+  controllerPathsCB(const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array);
+  hanp_msgs::HumanTrajectoryArrayConstPtr external_controller_trajs_;
 
   ros::ServiceServer follow_external_path_srv_;
   std::string follow_external_path_service_name_;
@@ -71,10 +72,11 @@ private:
       current_planner_plans_;
   move_humans::map_size cp_indices_;
   move_humans::map_trajectory current_controller_trajectories_;
-  move_humans::map_pose current_human_poses;
 
   MoveHumansState state_;
-  bool setup_, shutdown_costmaps_, new_global_plans_, publish_feedback_;
+  bool setup_, shutdown_costmaps_, new_global_plans_, reset_controller_plans_,
+      publish_feedback_;
+  double human_radius_;
 
   double planner_frequency_, controller_frequency_;
   bool p_freq_change_, c_freq_change_;
@@ -106,6 +108,7 @@ private:
                      move_humans::map_pose &starts,
                      move_humans::map_pose_vector &sub_goals,
                      move_humans::map_pose &goals);
+  void publishHumans(const move_humans::map_traj_point &human_pts);
 };
 }; // namespace move_humans
 

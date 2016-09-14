@@ -68,7 +68,8 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
     ros::NodeHandle prefix_nh;
     tf_prefix_ = tf::getPrefixParam(prefix_nh);
 
-    plans_pub_ = private_nh.advertise<hanp_msgs::PathArray>(PLANS_PUB_TOPIC, 1);
+    plans_pub_ =
+        private_nh.advertise<hanp_msgs::HumanPathArray>(PLANS_PUB_TOPIC, 1);
     if (visualize_paths_poses_) {
       plans_poses_pub_ = private_nh.advertise<geometry_msgs::PoseArray>(
           PLANS_POSES_PUB_TOPIC, 1);
@@ -137,7 +138,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
   move_humans::map_pose_vector combined_plans;
   for (auto start_kv : starts) {
     auto &human_id = start_kv.first;
-    ROS_INFO_NAMED(NODE_NAME, "Planning for humans %ld", human_id);
+    ROS_DEBUG_NAMED(NODE_NAME, "Planning for humans %ld", human_id);
     auto &start = start_kv.second;
     auto &goal = goals.find(human_id)->second;
     auto &sub_goal_vector = (sub_goals.find(human_id) != sub_goals.end())
@@ -259,7 +260,7 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
       plans[human_id] = plan_vector;
       combined_plans[human_id] = combined_plan;
       ROS_DEBUG_NAMED(NODE_NAME, "Added %ld plans for %ld human",
-                     plan_vector.size(), human_id);
+                      plan_vector.size(), human_id);
     }
   }
 
@@ -270,29 +271,32 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
 }
 
 void MultiGoalPlanner::publishPlans(move_humans::map_pose_vector &plans) {
-  hanp_msgs::PathArray path_array;
+  hanp_msgs::HumanPathArray human_path_array;
   for (auto &plan_kv : plans) {
-    nav_msgs::Path path;
+    hanp_msgs::HumanPath human_path;
     if (!plan_kv.second.empty()) {
-      path_array.ids.push_back(plan_kv.first);
-      path.header.stamp = plan_kv.second[0].header.stamp;
-      path.header.frame_id = plan_kv.second[0].header.frame_id;
-      path.poses = plan_kv.second;
-      path_array.paths.push_back(path);
+      human_path.header.stamp = plan_kv.second.front().header.stamp;
+      human_path.header.frame_id = plan_kv.second.front().header.frame_id;
+      human_path.id = plan_kv.first;
+      human_path.path.header.stamp = human_path.header.stamp;
+      human_path.path.header.frame_id = human_path.header.frame_id;
+      human_path.path.poses = plan_kv.second;
+      human_path_array.paths.push_back(human_path);
     }
   }
-  if (!path_array.paths.empty()) {
-    path_array.header.stamp = path_array.paths[0].header.stamp;
-    path_array.header.frame_id = path_array.paths[0].header.frame_id;
-    plans_pub_.publish(path_array);
+  if (!human_path_array.paths.empty()) {
+    human_path_array.header.stamp = human_path_array.paths.front().header.stamp;
+    human_path_array.header.frame_id =
+        human_path_array.paths.front().header.frame_id;
+    plans_pub_.publish(human_path_array);
 
     if (visualize_paths_poses_) {
       geometry_msgs::PoseArray paths_poses;
-      paths_poses.header.stamp = path_array.header.stamp;
-      paths_poses.header.frame_id = path_array.header.frame_id;
-      for (auto &path : path_array.paths) {
-        for (int i = 0; i < path.poses.size(); i++) {
-          auto pose_copy = path.poses[i].pose;
+      paths_poses.header.stamp = human_path_array.header.stamp;
+      paths_poses.header.frame_id = human_path_array.header.frame_id;
+      for (auto &path : human_path_array.paths) {
+        for (int i = 0; i < path.path.poses.size(); i++) {
+          auto pose_copy = path.path.poses[i].pose;
           pose_copy.position.z = i / paths_poses_z_reduce_factor_;
           paths_poses.poses.push_back(pose_copy);
         }

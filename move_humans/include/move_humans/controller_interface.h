@@ -15,11 +15,10 @@ public:
                           costmap_2d::Costmap2DROS *costmap_ros) = 0;
 
   virtual bool setPlans(const move_humans::map_pose_vector &plans) = 0;
-  virtual bool
-  setPlans(const move_humans::map_pose_vector &plans,
-           const move_humans::map_trajectory &trajectories) = 0;
+  virtual bool setPlans(const move_humans::map_pose_vector &plans,
+                        const move_humans::map_trajectory &trajectories) = 0;
 
-  virtual bool computeHumansStates(move_humans::map_pose &humans) = 0;
+  virtual bool computeHumansStates(move_humans::map_traj_point &humans) = 0;
 
   virtual bool areGoalsReached(move_humans::id_vector &reached_humans) = 0;
 

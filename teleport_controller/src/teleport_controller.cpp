@@ -4,18 +4,7 @@
 #define MAX_ANGULAR_VEL 0.4 // r/s
 #define MAX_LINEAR_ACC 0.0  // m/s^2
 #define MAX_ANGULAR_ACC 0.0 // r/s^2
-#define HUMAN_RADIUS 0.25   // m
-#define DEFAUTL_SEGMENT_TYPE hanp_msgs::TrackedSegmentType::TORSO
 #define PLANS_PUB_TOPIC "plans"
-#define HUMANS_PUB_TOPIC "humans"
-#define HUMANS_MARKERS_PUB_TOPIC "human_markers"
-#define PUBLISH_HUMAN_MARKERS true
-#define HUMANS_ARROWS_ID_OFFSET 100
-#define HUMANS_CYLINDERS_HEIGHT 1.5
-#define HUMAN_COLOR_R 0.5
-#define HUMAN_COLOR_G 0.5
-#define HUMAN_COLOR_B 0.0
-#define MARKER_LIFETIME 4.0
 #define DEFAULT_CONTROLLER_FRAME "map"
 #define M_PI_2 1.57
 #define MAX_START_DIST 1.0 // meters
@@ -24,9 +13,6 @@
 #define EP_TIME_EPS 0.001
 
 #include <pluginlib/class_list_macros.h>
-#include <hanp_msgs/TrackedHumans.h>
-#include <hanp_msgs/TrackedSegmentType.h>
-#include <visualization_msgs/MarkerArray.h>
 #include <angles/angles.h>
 
 #include "teleport_controller/teleport_controller.h"
@@ -57,20 +43,9 @@ void TeleportController::initialize(std::string name, tf::TransformListener *tf,
     private_nh.param("max_angular_vel", max_angular_vel_, MAX_ANGULAR_VEL);
     private_nh.param("max_linear_acc", max_linear_acc_, MAX_LINEAR_ACC);
     private_nh.param("max_angular_acc", max_angular_acc_, MAX_ANGULAR_ACC);
-    private_nh.param("human_radius", human_radius_, HUMAN_RADIUS);
-    private_nh.param("publish_human_markers", publish_human_markers_,
-                     PUBLISH_HUMAN_MARKERS);
 
-    plans_pub_ = private_nh.advertise<hanp_msgs::PathArray>(PLANS_PUB_TOPIC, 1);
-    humans_pub_ =
-        private_nh.advertise<hanp_msgs::TrackedHumans>(HUMANS_PUB_TOPIC, 1);
-    if (publish_human_markers_) {
-      humans_markers_pub_ =
-          private_nh.advertise<visualization_msgs::MarkerArray>(
-              HUMANS_MARKERS_PUB_TOPIC, 1);
-      ROS_DEBUG_NAMED(NODE_NAME, "Will %spublish human markers",
-                      publish_human_markers_ ? "" : "not ");
-    }
+    plans_pub_ =
+        private_nh.advertise<hanp_msgs::HumanPathArray>(PLANS_PUB_TOPIC, 1);
 
     dsrv_ =
         new dynamic_reconfigure::Server<TeleportControllerConfig>(private_nh);
@@ -111,7 +86,7 @@ bool TeleportController::setPlans(
     return false;
   }
 
-  ROS_INFO_NAMED(NODE_NAME, "Got %ld plan%s and %ld trajector%s", plans.size(),
+  ROS_DEBUG_NAMED(NODE_NAME, "Got %ld plan%s and %ld trajector%s", plans.size(),
                  plans.size() > 1 ? "s" : "", trajectories.size(),
                  trajectories.size() > 0 ? "y" : "ies");
 
@@ -145,7 +120,8 @@ bool TeleportController::setPlans(
   return true;
 }
 
-bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
+bool TeleportController::computeHumansStates(
+    move_humans::map_traj_point &humans) {
   // check if are running a new control sequency, reset time in case
   auto now = ros::Time::now();
   if (reset_time_) {
@@ -181,10 +157,6 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
       last_traj_point = last_traj_points_it->second;
     } else {
       last_traj_point = transformed_traj.points.front();
-      ROS_INFO("new traj start pose x=%.2f, y=%.2f, th=%.2f",
-               last_traj_point.transform.translation.x,
-               last_traj_point.transform.translation.y,
-               tf::getYaw(last_traj_point.transform.rotation));
     }
 
     // get last visited point index on the plan
@@ -202,11 +174,6 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
           start_pose.translation.y - last_traj_point.transform.translation.y);
       if (start_dist > MAX_START_DIST) {
         ROS_INFO_NAMED(NODE_NAME, "Resetting human %ld controller", human_id);
-        ROS_INFO(
-            "traj start x=%.2f, y=%.2f, last pose x=%.2f, y=%.2f, dist = %.2f",
-            start_pose.translation.x, start_pose.translation.y,
-            last_traj_point.transform.translation.x,
-            last_traj_point.transform.translation.y, start_dist);
         last_traj_point = transformed_traj.points.front();
       }
     }
@@ -224,15 +191,6 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
         projected_last_trans; // velocity,time are same
 
     // get references to adjusted last pose and twist
-    // ROS_INFO(
-    //     "proj pose x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f, tfs=%.2f",
-    //     last_traj_point.transform.translation.x,
-    //     last_traj_point.transform.translation.y,
-    //     tf::getYaw(last_traj_point.transform.rotation),
-    //     last_traj_point.velocity.linear.x,
-    //     last_traj_point.velocity.angular.z,
-    //     last_traj_point.time_from_start.toSec());
-
     auto last_point = last_traj_point;
     double last_time = last_point.time_from_start.toSec();
     double linear_dist, linear_time, angular_dist, angular_time, step_time,
@@ -391,17 +349,7 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
     transformed_traj.points.insert(transformed_traj.points.begin(), last_point);
   }
 
-  for (auto &last_traj_point_kv : last_traj_points_) {
-    auto &human_id = last_traj_point_kv.first;
-    auto &human_traj_point = last_traj_point_kv.second;
-    geometry_msgs::PoseStamped human_pose;
-    human_pose.header.stamp = now;
-    human_pose.header.frame_id = controller_frame_;
-    human_pose.pose.position.x = human_traj_point.transform.translation.x;
-    human_pose.pose.position.y = human_traj_point.transform.translation.y;
-    human_pose.pose.orientation = human_traj_point.transform.rotation;
-    humans[human_id] = human_pose;
-  }
+  humans= last_traj_points_;
 
   for (auto &human_id : reached_goals_) {
     last_traj_points_.erase(human_id);
@@ -413,8 +361,6 @@ bool TeleportController::computeHumansStates(move_humans::map_pose &humans) {
   }
 
   publishPlansFromTrajs(transformed_trajs);
-  publishHumans(
-      last_traj_points_); // TODO: move this fucntion to move_humans.cpp
   return true;
 }
 
@@ -428,118 +374,6 @@ bool TeleportController::areGoalsReached(
   reached_humans = reached_goals_;
   return true;
 }
-
-// bool TeleportController::transformPlans(
-//     const move_humans::map_pose_vector &plans,
-//     const move_humans::map_twist_vector &twists,
-//     move_humans::map_pose_vector &transformed_plans,
-//     move_humans::map_twist_vector &transformed_twists) {
-//   transformed_plans.clear();
-//   transformed_twists.clear();
-//   for (auto &plan_kv : plans) {
-//     auto &human_id = plan_kv.first;
-//     auto &plan = plan_kv.second;
-
-//     if (plan.empty()) {
-//       ROS_ERROR_NAMED(NODE_NAME, "Received empty plan for human %ld",
-//       human_id);
-//       continue;
-//     }
-
-//     if (plan[0].header.frame_id == "") {
-//       ROS_ERROR_NAMED(NODE_NAME, "Plan frame is empty for human %ld",
-//       human_id);
-//       continue;
-//     }
-
-//     if (std::find(reached_goals_.begin(), reached_goals_.end(), human_id) !=
-//         reached_goals_.end()) {
-//       continue;
-//     }
-
-//     auto transformed_plan_it = last_transformed_plans_.find(human_id);
-//     if (transformed_plan_it != last_transformed_plans_.end()) {
-//       transformed_plans[human_id] = transformed_plan_it->second;
-
-//       auto transformed_twist_it = last_transformed_twists_.find(human_id);
-//       if (transformed_twist_it != last_transformed_twists_.end()) {
-//         transformed_twists[human_id] = transformed_twist_it->second;
-//       }
-//       continue;
-//     }
-
-//     if (plan[0].header.frame_id != controller_frame_) {
-//       try {
-//         tf::StampedTransform plan_to_controller_transform;
-//         tf_->waitForTransform(controller_frame_, plan[0].header.frame_id,
-//                               ros::Time(0), ros::Duration(0.5));
-//         tf_->lookupTransform(controller_frame_, plan[0].header.frame_id,
-//                              ros::Time(0), plan_to_controller_transform);
-
-//         tf::Stamped<tf::Pose> tf_pose;
-//         geometry_msgs::PoseStamped transformed_pose;
-//         move_humans::pose_vector transformed_plan;
-//         for (auto &pose : plan) {
-//           tf::poseStampedMsgToTF(pose, tf_pose);
-//           tf_pose.setData(plan_to_controller_transform * tf_pose);
-//           tf_pose.stamp_ = plan_to_controller_transform.stamp_;
-//           tf_pose.frame_id_ = controller_frame_;
-//           tf::poseStampedTFToMsg(tf_pose, transformed_pose);
-//           transformed_plan.push_back(transformed_pose);
-//         }
-//         transformed_plans[human_id] = transformed_plan;
-
-//         auto twists_it = twists.find(human_id);
-//         if (twists_it != twists.end()) {
-//           auto &twist_v = twists_it->second;
-//           geometry_msgs::Twist plan_twist_in_controller_frame;
-//           tf_->lookupTwist(controller_frame_, plan[0].header.frame_id,
-//                            ros::Time(0), ros::Duration(0.1),
-//                            plan_twist_in_controller_frame);
-
-//           geometry_msgs::TwistStamped transformed_twist;
-//           move_humans::twist_vector transformed_twist_v;
-//           for (auto &twist : twist_v) {
-//             transformed_twist.header.stamp =
-//                 plan_to_controller_transform.stamp_;
-//             transformed_twist.header.frame_id = controller_frame_;
-//             transformed_twist.twist.linear.x =
-//                 twist.twist.linear.x -
-//                 plan_twist_in_controller_frame.linear.x;
-//             transformed_twist.twist.linear.y =
-//                 twist.twist.linear.y -
-//                 plan_twist_in_controller_frame.linear.y;
-//             transformed_twist.twist.angular.z =
-//                 twist.twist.angular.z -
-//                 plan_twist_in_controller_frame.angular.z;
-//             transformed_twist_v.push_back(transformed_twist);
-//           }
-//           transformed_twists[human_id] = transformed_twist_v;
-//         }
-
-//       } catch (tf::LookupException &ex) {
-//         ROS_ERROR_NAMED(NODE_NAME, "No Transform available Error: %s\n",
-//                         ex.what());
-//         continue;
-//       } catch (tf::ConnectivityException &ex) {
-//         ROS_ERROR_NAMED(NODE_NAME, "Connectivity Error: %s\n", ex.what());
-//         continue;
-//       } catch (tf::ExtrapolationException &ex) {
-//         ROS_ERROR_NAMED(NODE_NAME, "Extrapolation Error: %s\n", ex.what());
-//         continue;
-//       }
-//     } else {
-//       transformed_plans[human_id] = plan;
-
-//       auto twists_it = twists.find(human_id);
-//       if (twists_it != twists.end() && twists_it->second.size() > 0) {
-//         transformed_twists[human_id] = twists_it->second;
-//       }
-//     }
-//   }
-
-//   return !transformed_plans.empty();
-// }
 
 bool TeleportController::transformPlansAndTrajs(
     const move_humans::map_pose_vector &plans,
@@ -674,15 +508,6 @@ bool TeleportController::transformPlansAndTrajs(
           tf_trans = traj_to_controller_transform * tf_trans;
           tf::transformTFToMsg(tf_trans, tr_traj_point.transform);
 
-          ROS_INFO_THROTTLE(
-              1, "\nfrom: x=%.2f, y=%.2f, th=%.2f\nto: x=%.2f, y=%.2f, th=%.2f",
-              traj_point.transform.translation.x,
-              traj_point.transform.translation.y,
-              tf::getYaw(traj_point.transform.rotation),
-              tr_traj_point.transform.translation.x,
-              tr_traj_point.transform.translation.y,
-              tf::getYaw(tr_traj_point.transform.rotation));
-
           tr_traj_point.velocity.linear.x =
               traj_point.velocity.linear.x -
               traj_vel_in_controller_frame.linear.x;
@@ -718,28 +543,6 @@ bool TeleportController::transformPlansAndTrajs(
 
   return !transformed_trajs.empty();
 }
-
-// size_t
-// TeleportController::prunePlan(const move_humans::pose_vector &plan,
-//                               const geometry_msgs::PoseStamped &current_pose,
-//                               size_t begin_index) {
-//   size_t return_index = begin_index;
-//   double x_diff, y_diff, sq_diff,
-//       smallest_sq_diff = std::numeric_limits<double>::max();
-//   while (begin_index < plan.size()) {
-//     x_diff = plan[begin_index].pose.position.x -
-//     current_pose.pose.position.x;
-//     y_diff = plan[begin_index].pose.position.y -
-//     current_pose.pose.position.y;
-//     sq_diff = x_diff * x_diff + y_diff * y_diff;
-//     if (sq_diff < smallest_sq_diff) {
-//       return_index = begin_index;
-//       smallest_sq_diff = sq_diff;
-//     }
-//     ++begin_index;
-//   }
-//   return return_index;
-// }
 
 bool TeleportController::getProjectedPose(
     const hanp_msgs::Trajectory &traj, const size_t begin_index,
@@ -812,43 +615,21 @@ bool TeleportController::projectPoint(const geometry_msgs::Vector3 &line_point1,
   porjected_point.x = line_point1.x + (val_dp * e1.x) / lene1_sq;
   porjected_point.y = line_point1.y + (val_dp * e1.y) / lene1_sq;
 
-  // ROS_INFO("\nlp1: x=%.2f, y=%.2f\nlp2: x=%.2f, y=%.2f\np: x=%.2f y=%.2f\npp:
-  // "
-  //          "x=%.2f, y=%.2f\nnp_index: %s\n",
-  //          line_point1.x, line_point1.y, line_point2.x, line_point2.y,
-  //          point.x,
-  //          point.y, porjected_point.x, porjected_point.y,
-  //          (val_dp > 0 && val_dp < lene1_sq) ? "in" : "out");
-
   return (val_dp > 0 && val_dp < lene1_sq);
-}
-
-void TeleportController::publishPlans(move_humans::map_pose_vector &plans) {
-  hanp_msgs::PathArray path_array;
-  for (auto &plan_kv : plans) {
-    nav_msgs::Path path;
-    if (!plan_kv.second.empty()) {
-      path_array.ids.push_back(plan_kv.first);
-      path.header = plan_kv.second[0].header;
-      path.poses = plan_kv.second;
-      path_array.paths.push_back(path);
-    }
-  }
-  if (!path_array.paths.empty()) {
-    path_array.header = path_array.paths[0].header;
-    plans_pub_.publish(path_array);
-  }
 }
 
 void TeleportController::publishPlansFromTrajs(
     const move_humans::map_trajectory &trajs) {
   auto now = ros::Time::now();
-  hanp_msgs::PathArray path_array;
+  hanp_msgs::HumanPathArray human_path_array;
   for (auto &traj_kv : trajs) {
     if (!traj_kv.second.points.empty()) {
-      nav_msgs::Path path;
-      path.header.stamp = now;
-      path.header.frame_id = controller_frame_;
+      hanp_msgs::HumanPath human_path;
+      human_path.header.stamp = now;
+      human_path.header.frame_id = controller_frame_;
+      human_path.id = traj_kv.first;
+      human_path.path.header.stamp = now;
+      human_path.path.header.frame_id = controller_frame_;
       for (auto &traj_point : traj_kv.second.points) {
         geometry_msgs::PoseStamped pose;
         pose.header.stamp = now;
@@ -857,157 +638,15 @@ void TeleportController::publishPlansFromTrajs(
         pose.pose.position.y = traj_point.transform.translation.y;
         pose.pose.position.z = traj_point.transform.translation.z;
         pose.pose.orientation = traj_point.transform.rotation;
-        path.poses.push_back(pose);
+        human_path.path.poses.push_back(pose);
       }
-      path_array.ids.push_back(traj_kv.first);
-      path_array.paths.push_back(path);
+      human_path_array.paths.push_back(human_path);
     }
   }
-  if (!path_array.paths.empty()) {
-    path_array.header = path_array.paths[0].header;
-    plans_pub_.publish(path_array);
-  }
-}
-
-// void TeleportController::publishHumans(move_humans::map_pose_twist
-// &human_pts) {
-//   hanp_msgs::TrackedHumans humans;
-//   visualization_msgs::MarkerArray humans_markers;
-//   for (auto &pt_kv : human_pts) {
-//     hanp_msgs::TrackedSegment human_segment;
-//     human_segment.type = DEFAUTL_SEGMENT_TYPE;
-//     human_segment.pose.pose = pt_kv.second.first.pose;
-//     human_segment.pose.covariance[0] = human_radius_;
-//     human_segment.pose.covariance[7] = human_radius_;
-//     human_segment.twist.twist = pt_kv.second.second.twist;
-//     hanp_msgs::TrackedHuman human;
-//     human.track_id = pt_kv.first;
-//     human.segments.push_back(human_segment);
-//     humans.humans.push_back(human);
-
-//     if (publish_human_markers_) {
-//       visualization_msgs::Marker human_arrow, human_cylinder;
-
-//       human_arrow.header = pt_kv.second.first.header;
-//       human_arrow.type = visualization_msgs::Marker::ARROW;
-//       human_arrow.action = visualization_msgs::Marker::MODIFY;
-//       human_arrow.id = pt_kv.first + HUMANS_ARROWS_ID_OFFSET;
-//       human_arrow.pose = pt_kv.second.first.pose;
-//       human_arrow.scale.x = human_radius_ * 2.0;
-//       human_arrow.scale.y = 0.1;
-//       human_arrow.scale.z = 0.1;
-//       human_arrow.color.a = 1.0;
-//       human_arrow.color.r = HUMAN_COLOR_R;
-//       human_arrow.color.g = HUMAN_COLOR_G;
-//       human_arrow.color.b = HUMAN_COLOR_B;
-//       human_arrow.lifetime = ros::Duration(MARKER_LIFETIME);
-
-//       human_cylinder.header = pt_kv.second.first.header;
-//       human_cylinder.type = visualization_msgs::Marker::CYLINDER;
-//       human_cylinder.action = visualization_msgs::Marker::MODIFY;
-//       human_cylinder.id = pt_kv.first;
-//       human_cylinder.pose = pt_kv.second.first.pose;
-//       human_cylinder.pose.position.z += (HUMANS_CYLINDERS_HEIGHT / 2);
-//       human_cylinder.scale.x = human_radius_ * 2;
-//       human_cylinder.scale.y = human_radius_ * 2;
-//       human_cylinder.scale.z = HUMANS_CYLINDERS_HEIGHT;
-//       human_cylinder.color.a = 1.0;
-//       human_cylinder.color.r = HUMAN_COLOR_R;
-//       human_cylinder.color.g = HUMAN_COLOR_G;
-//       human_cylinder.color.b = HUMAN_COLOR_B;
-//       human_cylinder.lifetime = ros::Duration(MARKER_LIFETIME);
-
-//       humans_markers.markers.push_back(human_arrow);
-//       humans_markers.markers.push_back(human_cylinder);
-//     }
-//   }
-//   if (!humans.humans.empty()) {
-//     humans.header.stamp = ros::Time::now();
-//     humans.header.frame_id = controller_frame_;
-//     humans_pub_.publish(humans);
-
-//     if (publish_human_markers_) {
-//       humans_markers_pub_.publish(humans_markers);
-//     }
-//   }
-// }
-
-void TeleportController::publishHumans(
-    const move_humans::map_traj_point &human_pts) {
-  auto now = ros::Time::now();
-
-  hanp_msgs::TrackedHumans humans;
-  visualization_msgs::MarkerArray humans_markers;
-  for (auto &human_pt_kv : human_pts) {
-    hanp_msgs::TrackedSegment human_segment;
-    human_segment.type = DEFAUTL_SEGMENT_TYPE;
-    human_segment.pose.pose.position.x =
-        human_pt_kv.second.transform.translation.x;
-    human_segment.pose.pose.position.y =
-        human_pt_kv.second.transform.translation.y;
-    human_segment.pose.pose.orientation = human_pt_kv.second.transform.rotation;
-    human_segment.pose.covariance[0] = human_radius_;
-    human_segment.pose.covariance[7] = human_radius_;
-    human_segment.twist.twist = human_pt_kv.second.velocity;
-    hanp_msgs::TrackedHuman human;
-    human.track_id = human_pt_kv.first;
-    human.segments.push_back(human_segment);
-    humans.humans.push_back(human);
-
-    if (publish_human_markers_) {
-      visualization_msgs::Marker human_arrow, human_cylinder;
-
-      human_arrow.header.stamp = now;
-      human_arrow.header.frame_id = controller_frame_;
-      human_arrow.type = visualization_msgs::Marker::ARROW;
-      human_arrow.action = visualization_msgs::Marker::MODIFY;
-      human_arrow.id = human_pt_kv.first + HUMANS_ARROWS_ID_OFFSET;
-      human_arrow.pose.position.x = human_pt_kv.second.transform.translation.x;
-      human_arrow.pose.position.y = human_pt_kv.second.transform.translation.y;
-      human_arrow.pose.position.z = human_pt_kv.second.transform.translation.z;
-      human_arrow.pose.orientation = human_pt_kv.second.transform.rotation;
-      human_arrow.scale.x = human_radius_ * 2.0;
-      human_arrow.scale.y = 0.1;
-      human_arrow.scale.z = 0.1;
-      human_arrow.color.a = 1.0;
-      human_arrow.color.r = HUMAN_COLOR_R;
-      human_arrow.color.g = HUMAN_COLOR_G;
-      human_arrow.color.b = HUMAN_COLOR_B;
-      human_arrow.lifetime = ros::Duration(MARKER_LIFETIME);
-
-      human_cylinder.header.stamp = now;
-      human_cylinder.header.frame_id = controller_frame_;
-      human_cylinder.type = visualization_msgs::Marker::CYLINDER;
-      human_cylinder.action = visualization_msgs::Marker::MODIFY;
-      human_cylinder.id = human_pt_kv.first;
-      human_cylinder.pose.position.x =
-          human_pt_kv.second.transform.translation.x;
-      human_cylinder.pose.position.y =
-          human_pt_kv.second.transform.translation.y;
-      human_cylinder.pose.position.z += (HUMANS_CYLINDERS_HEIGHT / 2);
-      // human_cylinder.pose.orientation =
-      // human_pt_kv.second.transform.rotation;
-      human_cylinder.scale.x = human_radius_ * 2;
-      human_cylinder.scale.y = human_radius_ * 2;
-      human_cylinder.scale.z = HUMANS_CYLINDERS_HEIGHT;
-      human_cylinder.color.a = 1.0;
-      human_cylinder.color.r = HUMAN_COLOR_R;
-      human_cylinder.color.g = HUMAN_COLOR_G;
-      human_cylinder.color.b = HUMAN_COLOR_B;
-      human_cylinder.lifetime = ros::Duration(MARKER_LIFETIME);
-
-      humans_markers.markers.push_back(human_arrow);
-      humans_markers.markers.push_back(human_cylinder);
-    }
-  }
-  if (!humans.humans.empty()) {
-    humans.header.stamp = now;
-    humans.header.frame_id = controller_frame_;
-    humans_pub_.publish(humans);
-
-    if (publish_human_markers_) {
-      humans_markers_pub_.publish(humans_markers);
-    }
+  if (!human_path_array.paths.empty()) {
+    human_path_array.header.stamp = now;
+    human_path_array.header.frame_id = controller_frame_;
+    plans_pub_.publish(human_path_array);
   }
 }
 };

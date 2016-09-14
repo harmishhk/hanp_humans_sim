@@ -2,10 +2,24 @@
 #define CLEARA_COSTMAPS_SERVICE_NAME "clear_costmaps"
 #define FOLLOW_EXTERNAL_PATHS_SERVICE_NAME "follow_external_paths"
 #define CONTROLLER_TRAJS_SUB_TOPIC "external_human_plans"
+#define HUMANS_PUB_TOPIC "humans"
+#define HUMANS_MARKERS_PUB_TOPIC "human_markers"
+#define PUBLISH_HUMAN_MARKERS true
+#define DEFAUTL_SEGMENT_TYPE hanp_msgs::TrackedSegmentType::TORSO
+#define HUMANS_ARROWS_ID_OFFSET 100
+#define HUMANS_CYLINDERS_HEIGHT 1.5
+#define HUMAN_COLOR_R 0.5
+#define HUMAN_COLOR_G 0.5
+#define HUMAN_COLOR_B 0.0
+#define MARKER_LIFETIME 4.0
+#define HUMAN_RADIUS 0.25 // m
 // #define EXTERNAL_PATH_DIST_THRESHOLD 0.2
 
-#include <geometry_msgs/PoseArray.h>
 #include <boost/thread.hpp>
+#include <geometry_msgs/PoseArray.h>
+#include <hanp_msgs/TrackedHumans.h>
+#include <hanp_msgs/TrackedSegmentType.h>
+#include <visualization_msgs/MarkerArray.h>
 
 #include "move_humans/move_humans.h"
 
@@ -35,9 +49,20 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   private_nh.param("controller_frequency", controller_frequency_, 20.0);
   private_nh.param("shutdown_costmaps", shutdown_costmaps_, false);
   private_nh.param("publish_feedback", publish_feedback_, true);
+  private_nh.param("publish_human_markers", publish_human_markers_,
+                   PUBLISH_HUMAN_MARKERS);
+  private_nh.param("human_radius", human_radius_, HUMAN_RADIUS);
 
   current_goals_pub_ =
       private_nh.advertise<geometry_msgs::PoseArray>("current_goals", 0);
+  humans_pub_ =
+      private_nh.advertise<hanp_msgs::TrackedHumans>(HUMANS_PUB_TOPIC, 1);
+  if (publish_human_markers_) {
+    humans_markers_pub_ = private_nh.advertise<visualization_msgs::MarkerArray>(
+        HUMANS_MARKERS_PUB_TOPIC, 1);
+    ROS_DEBUG_NAMED(NODE_NAME, "Will %spublish human markers",
+                    publish_human_markers_ ? "" : "not ");
+  }
 
   controller_trajs_sub_ = private_nh.subscribe(
       CONTROLLER_TRAJS_SUB_TOPIC, 1, &MoveHumans::controllerPathsCB, this);
@@ -168,7 +193,7 @@ void MoveHumans::planThread() {
   boost::unique_lock<boost::mutex> lock(planner_mutex_);
   while (nh.ok()) {
     while (wait_for_wake || !run_planner_) {
-      ROS_INFO_NAMED(NODE_NAME "_plan_thread", "Planner thread is suspending");
+      ROS_DEBUG_NAMED(NODE_NAME "_plan_thread", "Planner thread is suspending");
       planner_cond_.wait(lock);
       wait_for_wake = false;
     }
@@ -207,8 +232,8 @@ void MoveHumans::planThread() {
     lock.lock();
 
     if (planner_plans_->size() > 0) {
-      ROS_INFO_NAMED(NODE_NAME "_plan_thread", "Got %lu new plans",
-                     planner_plans_->size());
+      ROS_DEBUG_NAMED(NODE_NAME "_plan_thread", "Got %lu new plans",
+                      planner_plans_->size());
       auto planner_plans = planner_plans_;
       planner_plans_ = latest_plans_;
       latest_plans_ = planner_plans;
@@ -216,7 +241,7 @@ void MoveHumans::planThread() {
 
       if (run_planner_) {
         state_ = move_humans::MoveHumansState::CONTROLLING;
-        ROS_INFO_NAMED(NODE_NAME, "Changing to CONTROLLING state");
+        ROS_DEBUG_NAMED(NODE_NAME, "Changing to CONTROLLING state");
       }
       if (planner_frequency_ <= 0) {
         run_planner_ = false;
@@ -249,7 +274,7 @@ void MoveHumans::wakePlanner(const ros::TimerEvent &event) {
 
 void MoveHumans::actionCB(
     const move_humans::MoveHumansGoalConstPtr &move_humans_goal) {
-  ROS_INFO_NAMED(NODE_NAME, "Received new planning request");
+  ROS_DEBUG_NAMED(NODE_NAME, "Received new planning request");
   move_humans::map_pose starts, goals;
   move_humans::map_pose_vector sub_goals;
   if (!validateGoals(*move_humans_goal, starts, sub_goals, goals)) {
@@ -282,7 +307,7 @@ void MoveHumans::actionCB(
   planner_goals_ = goals;
   planner_sub_goals_ = sub_goals;
   state_ = move_humans::MoveHumansState::PLANNING;
-  ROS_INFO_NAMED(NODE_NAME, "Changed to  PLANNING state");
+  ROS_DEBUG_NAMED(NODE_NAME, "Changed to  PLANNING state");
   run_planner_ = true;
   planner_cond_.notify_one();
   lock.unlock();
@@ -312,7 +337,7 @@ void MoveHumans::actionCB(
         planner_goals_ = goals;
         planner_sub_goals_ = sub_goals;
         state_ = move_humans::MoveHumansState::PLANNING;
-        ROS_INFO_NAMED(NODE_NAME, "Changed to  PLANNING state");
+        ROS_DEBUG_NAMED(NODE_NAME, "Changed to  PLANNING state");
         run_planner_ = true;
         planner_cond_.notify_one();
         lock.unlock();
@@ -345,7 +370,7 @@ void MoveHumans::actionCB(
       planner_goals_ = goals;
       planner_sub_goals_ = sub_goals;
       state_ = move_humans::MoveHumansState::PLANNING;
-      ROS_INFO_NAMED(NODE_NAME, "Changed to  PLANNING state");
+      ROS_DEBUG_NAMED(NODE_NAME, "Changed to  PLANNING state");
       run_planner_ = true;
       planner_cond_.notify_one();
       lock.unlock();
@@ -357,6 +382,7 @@ void MoveHumans::actionCB(
       new_global_plans_ = false;
       controller_plans_ = latest_plans_;
       latest_plans_ = controller_plans;
+      reset_controller_plans_ = true;
       lock.unlock();
 
       current_controller_plans_.clear();
@@ -421,7 +447,7 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 
   switch (state_) {
   case move_humans::MoveHumansState::PLANNING: {
-    ROS_INFO_NAMED(NODE_NAME, "Waiting for plan, in the planning state");
+    ROS_DEBUG_NAMED(NODE_NAME, "Waiting for plan, in the planning state");
     break;
   }
 
@@ -437,41 +463,55 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
     current_controller_plans_.clear();
     current_controller_trajectories_.clear();
 
-    boost::unique_lock<boost::mutex> lock(external_trajs_mutex_);
-    if (use_external_trajs_ && new_external_controller_trajs_) {
-      new_external_controller_trajs_ = false;
-      if (external_controller_trajs_->ids.size() ==
-          external_controller_trajs_->trajectories.size()) {
-        for (size_t i = 0; i < external_controller_trajs_->ids.size(); ++i) {
-          auto &human_id = external_controller_trajs_->ids[i];
-          auto &human_trajectory = external_controller_trajs_->trajectories[i];
-          current_controller_trajectories_[human_id] = human_trajectory;
-          reached_humans.erase(std::remove(reached_humans.begin(),
-                                           reached_humans.end(), human_id),
-                               reached_humans.end());
-          ROS_DEBUG_NAMED(NODE_NAME, "Using external tajectory for human %ld",
-                          human_id);
+    if (reset_controller_plans_) {
+      reset_controller_plans_ = false;
+      move_humans::map_traj_point new_human_pts;
+      for (auto &controller_plan_kv : *controller_plans_) {
+        auto &human_id = controller_plan_kv.first;
+        auto &controller_plan_vector = controller_plan_kv.second;
+        current_controller_plans_[human_id] = controller_plan_vector.front();
+        if (!controller_plan_vector.front().empty()) {
+          auto &start_pose = controller_plan_vector.front().front().pose;
+          hanp_msgs::TrajectoryPoint human_start_point;
+          human_start_point.transform.translation.x = start_pose.position.x;
+          human_start_point.transform.translation.y = start_pose.position.y;
+          human_start_point.transform.rotation = start_pose.orientation;
+          new_human_pts[human_id] = human_start_point;
         }
-      } else {
-        ROS_WARN_NAMED(NODE_NAME, "Size fo ids and trajectories do not match, "
-                                  "ignoring external trajectories");
       }
-    }
-    lock.unlock();
-
-    if (reached_humans.size() > 0) {
-      for (auto &human_id : reached_humans) {
-        auto plan_vector_it = controller_plans_->find(human_id);
-        if (plan_vector_it != controller_plans_->end()) {
-          auto &plan_vector = plan_vector_it->second;
-          if (plan_vector.size() > 0) {
-            plan_vector.erase(plan_vector.begin());
+      publishHumans(new_human_pts);
+    } else {
+      if (reached_humans.size() > 0) {
+        for (auto &human_id : reached_humans) {
+          auto plan_vector_it = controller_plans_->find(human_id);
+          if (plan_vector_it != controller_plans_->end()) {
+            auto &plan_vector = plan_vector_it->second;
             if (plan_vector.size() > 0) {
-              current_controller_plans_[human_id] = plan_vector.front();
+              plan_vector.erase(plan_vector.begin());
+              if (plan_vector.size() > 0) {
+                current_controller_plans_[human_id] = plan_vector.front();
+              }
             }
           }
         }
       }
+
+      boost::unique_lock<boost::mutex> lock(external_trajs_mutex_);
+      if (use_external_trajs_ && new_external_controller_trajs_) {
+        new_external_controller_trajs_ = false;
+        for (auto &human_trajectory :
+             external_controller_trajs_->trajectories) {
+          current_controller_trajectories_[human_trajectory.id] =
+              human_trajectory.trajectory;
+          // reached_humans.erase(std::remove(reached_humans.begin(),
+          //                                  reached_humans.end(),
+          //                                  human_trajectory.id),
+          //                      reached_humans.end());
+          ROS_DEBUG_NAMED(NODE_NAME, "Using external tajectory for human %ld",
+                          human_trajectory.id);
+        }
+      }
+      lock.unlock();
     }
 
     if (current_controller_plans_.size() > 0 ||
@@ -498,15 +538,29 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 
     boost::unique_lock<costmap_2d::Costmap2D::mutex_t> costmap_lock(
         *(controller_costmap_ros_->getCostmap()->getMutex()));
-    if (controller_->computeHumansStates(current_human_poses)) {
+    move_humans::map_traj_point current_human_points;
+    if (controller_->computeHumansStates(current_human_points)) {
       ROS_DEBUG_NAMED(NODE_NAME,
                       "Got valid human positions from the controller");
+      publishHumans(current_human_points);
       if (publish_feedback_) {
+        auto now = ros::Time::now();
+        auto controller_frame = controller_costmap_ros_->getGlobalFrameID();
         move_humans::MoveHumansFeedback feedback;
-        for (auto &pose_kv : current_human_poses) {
+        for (auto &point_kv : current_human_points) {
+          auto &human_id = point_kv.first;
+          auto &human_traj_point = point_kv.second;
+
+          geometry_msgs::PoseStamped pose;
+          pose.header.stamp = now;
+          pose.header.frame_id = controller_frame;
+          pose.pose.position.x = human_traj_point.transform.translation.x;
+          pose.pose.position.y = human_traj_point.transform.translation.y;
+          pose.pose.orientation = human_traj_point.transform.rotation;
+
           move_humans::HumanPose human_pose;
-          human_pose.human_id = pose_kv.first;
-          human_pose.pose = pose_kv.second;
+          human_pose.human_id = human_id;
+          human_pose.pose = pose;
           feedback.current_poses.push_back(human_pose);
         }
         mhas_->publishFeedback(feedback);
@@ -777,18 +831,96 @@ bool MoveHumans::followExternalPaths(std_srvs::SetBool::Request &req,
   res.success = true;
   res.message = message;
   use_external_trajs_ = req.data;
+  if (!use_external_trajs_) {
+    boost::mutex::scoped_lock(external_trajs_mutex_);
+    external_controller_trajs_ = NULL;
+  }
   return true;
 }
 
 void MoveHumans::controllerPathsCB(
-    const hanp_msgs::TrajectoryArrayConstPtr traj_array) {
-  if (traj_array->ids.size() != traj_array->trajectories.size()) {
-    ROS_ERROR_NAMED(NODE_NAME,
-                    "Erroneous external trajecotry array message, ignoring");
-    return;
-  }
+    const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array) {
   boost::mutex::scoped_lock(external_trajs_mutex_);
   external_controller_trajs_ = traj_array;
   new_external_controller_trajs_ = true;
+}
+
+void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
+  auto now = ros::Time::now();
+  auto controller_frame = controller_costmap_ros_->getGlobalFrameID();
+
+  hanp_msgs::TrackedHumans humans;
+  visualization_msgs::MarkerArray humans_markers;
+  for (auto &human_pt_kv : human_pts) {
+    hanp_msgs::TrackedSegment human_segment;
+    human_segment.type = DEFAUTL_SEGMENT_TYPE;
+    human_segment.pose.pose.position.x =
+        human_pt_kv.second.transform.translation.x;
+    human_segment.pose.pose.position.y =
+        human_pt_kv.second.transform.translation.y;
+    human_segment.pose.pose.orientation = human_pt_kv.second.transform.rotation;
+    human_segment.pose.covariance[0] = human_radius_;
+    human_segment.pose.covariance[7] = human_radius_;
+    human_segment.twist.twist = human_pt_kv.second.velocity;
+    hanp_msgs::TrackedHuman human;
+    human.track_id = human_pt_kv.first;
+    human.segments.push_back(human_segment);
+    humans.humans.push_back(human);
+
+    if (publish_human_markers_) {
+      visualization_msgs::Marker human_arrow, human_cylinder;
+
+      human_arrow.header.stamp = now;
+      human_arrow.header.frame_id = controller_frame;
+      human_arrow.type = visualization_msgs::Marker::ARROW;
+      human_arrow.action = visualization_msgs::Marker::MODIFY;
+      human_arrow.id = human_pt_kv.first + HUMANS_ARROWS_ID_OFFSET;
+      human_arrow.pose.position.x = human_pt_kv.second.transform.translation.x;
+      human_arrow.pose.position.y = human_pt_kv.second.transform.translation.y;
+      human_arrow.pose.position.z = human_pt_kv.second.transform.translation.z;
+      human_arrow.pose.orientation = human_pt_kv.second.transform.rotation;
+      human_arrow.scale.x = human_radius_ * 2.0;
+      human_arrow.scale.y = 0.1;
+      human_arrow.scale.z = 0.1;
+      human_arrow.color.a = 1.0;
+      human_arrow.color.r = HUMAN_COLOR_R;
+      human_arrow.color.g = HUMAN_COLOR_G;
+      human_arrow.color.b = HUMAN_COLOR_B;
+      human_arrow.lifetime = ros::Duration(MARKER_LIFETIME);
+
+      human_cylinder.header.stamp = now;
+      human_cylinder.header.frame_id = controller_frame;
+      human_cylinder.type = visualization_msgs::Marker::CYLINDER;
+      human_cylinder.action = visualization_msgs::Marker::MODIFY;
+      human_cylinder.id = human_pt_kv.first;
+      human_cylinder.pose.position.x =
+          human_pt_kv.second.transform.translation.x;
+      human_cylinder.pose.position.y =
+          human_pt_kv.second.transform.translation.y;
+      human_cylinder.pose.position.z += (HUMANS_CYLINDERS_HEIGHT / 2);
+      // human_cylinder.pose.orientation =
+      // human_pt_kv.second.transform.rotation;
+      human_cylinder.scale.x = human_radius_ * 2;
+      human_cylinder.scale.y = human_radius_ * 2;
+      human_cylinder.scale.z = HUMANS_CYLINDERS_HEIGHT;
+      human_cylinder.color.a = 1.0;
+      human_cylinder.color.r = HUMAN_COLOR_R;
+      human_cylinder.color.g = HUMAN_COLOR_G;
+      human_cylinder.color.b = HUMAN_COLOR_B;
+      human_cylinder.lifetime = ros::Duration(MARKER_LIFETIME);
+
+      humans_markers.markers.push_back(human_arrow);
+      humans_markers.markers.push_back(human_cylinder);
+    }
+  }
+  if (!humans.humans.empty()) {
+    humans.header.stamp = now;
+    humans.header.frame_id = controller_frame;
+    humans_pub_.publish(humans);
+
+    if (publish_human_markers_) {
+      humans_markers_pub_.publish(humans_markers);
+    }
+  }
 }
 };
