@@ -11,6 +11,7 @@
 #define LINEAR_DIST_EPS 0.001
 #define ANGULAR_DIST_EPS 0.001
 #define EP_TIME_EPS 0.001
+#define POINT_JUMP_EPS 0.001
 
 #include <pluginlib/class_list_macros.h>
 #include <angles/angles.h>
@@ -87,8 +88,8 @@ bool TeleportController::setPlans(
   }
 
   ROS_DEBUG_NAMED(NODE_NAME, "Got %ld plan%s and %ld trajector%s", plans.size(),
-                 plans.size() > 1 ? "s" : "", trajectories.size(),
-                 trajectories.size() > 0 ? "y" : "ies");
+                  plans.size() > 1 ? "s" : "", trajectories.size(),
+                  trajectories.size() > 0 ? "y" : "ies");
 
   for (auto &plan_kv : plans) {
     auto &human_id = plan_kv.first;
@@ -111,10 +112,17 @@ bool TeleportController::setPlans(
         reached_goals_.end());
     last_traversed_indices_.erase(human_id);
     last_transformed_trajs_.erase(human_id);
+    auto last_traj_points_it = last_traj_points_.find(human_id);
+    if (last_traj_points_it != last_traj_points_.end()) {
+      last_traj_points_it->second.time_from_start.fromSec(0.0);
+    }
 
     // trajectories override plans
     plans_.erase(human_id);
     trajs_[human_id] = trajectory;
+    if (trajs_[human_id].points.size() > 1) {
+      trajs_[human_id].points.erase(trajs_[human_id].points.begin());
+    }
   }
 
   return true;
@@ -187,15 +195,17 @@ bool TeleportController::computeHumansStates(
       ROS_ERROR_NAMED(NODE_NAME, "Error in projecint current pose");
       continue;
     }
-    last_traj_point.transform.translation =
-        projected_last_trans; // velocity,time are same
+    last_traj_point.transform.translation = projected_last_trans;
+    last_traj_point.transform.rotation =
+        transformed_traj.points[next_point_index].transform.rotation;
+    // not updating time and velocity of last_traj_point;
 
     // get references to adjusted last pose and twist
     auto last_point = last_traj_point;
     double last_time = last_point.time_from_start.toSec();
     double linear_dist, linear_time, angular_dist, angular_time, step_time,
         total_time = 0.0, acc_time = 0.0, last_total_time = 0.0;
-    double start_point_time = last_time < 0 ? 0.0 : last_time;
+    double start_point_time = last_time < 0.0 ? 0.0 : last_time;
     while (next_point_index < transformed_traj.points.size()) {
       auto &next_point = transformed_traj.points[next_point_index];
       double point_time = next_point.time_from_start.toSec();
@@ -204,12 +214,16 @@ bool TeleportController::computeHumansStates(
                                      last_point.transform.translation.x,
                                  next_point.transform.translation.y -
                                      last_point.transform.translation.y);
+        if (linear_dist < POINT_JUMP_EPS) {
+          next_point_index++;
+          continue;
+        }
         linear_time = linear_dist / max_linear_vel_;
         angular_dist = std::abs(angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation)));
         angular_time = angular_dist / max_angular_vel_;
-        angular_time = 0.0;
+        // angular_time = 0.0;
         step_time = std::max(linear_time, angular_time);
         acc_time += step_time;
         total_time += step_time;
@@ -243,57 +257,84 @@ bool TeleportController::computeHumansStates(
     double ep_time = cycle_time - last_total_time;
     auto &next_point = transformed_traj.points[next_point_index];
 
+    double last_point_time = last_point.time_from_start.toSec();
+    double next_point_time = next_point.time_from_start.toSec();
+
+    ROS_INFO(
+        "n-1 x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f",
+        last_point.transform.translation.x, last_point.transform.translation.y,
+        tf::getYaw(last_point.transform.rotation), last_point.velocity.linear.x,
+        last_point.velocity.angular.z, last_point_time);
+    ROS_INFO(
+        "n+1 x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f ep=%.2f",
+        next_point.transform.translation.x, next_point.transform.translation.y,
+        tf::getYaw(next_point.transform.rotation), next_point.velocity.linear.x,
+        next_point.velocity.angular.z, next_point_time, ep_time);
+
     if (ep_time > EP_TIME_EPS) {
-      double last_point_time = last_point.time_from_start.toSec();
-      double next_point_time = next_point.time_from_start.toSec();
       if (last_point_time >= 0.0 && next_point_time >= 0.0) {
-        // here we first get interpolated velocity
-
-        // ROS_INFO("pose n-1 x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f, "
-        //          "time=%.2f",
-        //          last_point.transform.translation.x,
-        //          last_point.transform.translation.y,
-        //          tf::getYaw(last_point.transform.rotation),
-        //          last_point.velocity.linear.x, last_point.velocity.angular.z,
-        //          last_point_time);
-        // ROS_INFO("pose n+1 x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f "
-        //          "time=%.2f, ep=%.2f",
-        //          next_point.transform.translation.x,
-        //          next_point.transform.translation.y,
-        //          tf::getYaw(next_point.transform.rotation),
-        //          next_point.velocity.linear.x, next_point.velocity.angular.z,
-        //          next_point_time, ep_time);
-
-        linear_dist = std::hypot(next_point.transform.translation.x -
-                                     last_point.transform.translation.x,
-                                 next_point.transform.translation.y -
-                                     last_point.transform.translation.y);
-        last_point.velocity.linear.x +=
-            (next_point.velocity.linear.x - last_point.velocity.linear.x) *
-            ep_time;
-        last_point.velocity.angular.z +=
-            (next_point.velocity.angular.z - last_point.velocity.angular.z) *
-            ep_time;
-        double can_lin_dist = last_point.velocity.linear.x * ep_time;
-        double ratio_lin_dist = can_lin_dist / linear_dist;
-
+        // interpolate pose and velocity
+        double time_ratio =
+            std::min(ep_time / (next_point_time - last_point_time), 1.0);
         last_point.transform.translation.x +=
             (next_point.transform.translation.x -
              last_point.transform.translation.x) *
-            ratio_lin_dist;
+            time_ratio;
         last_point.transform.translation.y +=
             (next_point.transform.translation.y -
              last_point.transform.translation.y) *
-            ratio_lin_dist;
-
-        angular_dist = angles::shortest_angular_distance(
-            tf::getYaw(last_point.transform.rotation),
-            tf::getYaw(next_point.transform.rotation));
-        double can_ang_dist = next_point.velocity.angular.z * ep_time;
-        double ratio_ang_dist = can_ang_dist / std::abs(angular_dist);
+            time_ratio;
         last_point.transform.rotation = tf::createQuaternionMsgFromYaw(
             tf::getYaw(last_point.transform.rotation) +
-            (angular_dist * ratio_ang_dist));
+            angles::shortest_angular_distance(
+                tf::getYaw(last_point.transform.rotation),
+                tf::getYaw(next_point.transform.rotation)) *
+                time_ratio);
+        last_point.velocity.linear.x +=
+            (next_point.velocity.linear.x - last_point.velocity.linear.x) *
+            time_ratio;
+        last_point.velocity.angular.z +=
+            (next_point.velocity.angular.z - last_point.velocity.angular.z) *
+            time_ratio;
+        last_point.time_from_start.fromSec(
+            last_point.time_from_start.toSec() +
+            (next_point.time_from_start.toSec() -
+             last_point.time_from_start.toSec()) *
+                time_ratio);
+        ROS_INFO("tr=%.2f", time_ratio);
+
+        // // here we first get interpolated velocity linear_dist =
+        // std::hypot(next_point.transform.translation.x -
+        //                last_point.transform.translation.x,
+        //            next_point.transform.translation.y -
+        //                last_point.transform.translation.y);
+        // last_point.velocity.linear.x +=
+        //     (next_point.velocity.linear.x - last_point.velocity.linear.x) *
+        //     ep_time;
+        // last_point.velocity.angular.z +=
+        //     (next_point.velocity.angular.z - last_point.velocity.angular.z) *
+        //     ep_time;
+        // double can_lin_dist = last_point.velocity.linear.x * ep_time;
+        // double ratio_lin_dist = std::min(can_lin_dist / linear_dist, 1.0);
+
+        // last_point.transform.translation.x +=
+        //     (next_point.transform.translation.x -
+        //      last_point.transform.translation.x) *
+        //     ratio_lin_dist;
+        // last_point.transform.translation.y +=
+        //     (next_point.transform.translation.y -
+        //      last_point.transform.translation.y) *
+        //     ratio_lin_dist;
+
+        // angular_dist = angles::shortest_angular_distance(
+        //     tf::getYaw(last_point.transform.rotation),
+        //     tf::getYaw(next_point.transform.rotation));
+        // double can_ang_dist = next_point.velocity.angular.z * ep_time;
+        // double ratio_ang_dist =
+        //     std::min(can_ang_dist / std::abs(angular_dist), 1.0);
+        // last_point.transform.rotation = tf::createQuaternionMsgFromYaw(
+        //     tf::getYaw(last_point.transform.rotation) +
+        //     (angular_dist * ratio_ang_dist));
       } else {
         // assuming maximum velocities
         linear_dist = std::hypot(next_point.transform.translation.x -
@@ -301,7 +342,7 @@ bool TeleportController::computeHumansStates(
                                  next_point.transform.translation.y -
                                      last_point.transform.translation.y);
         double can_lin_dist = max_linear_vel_ * ep_time;
-        double ratio_lin_dist = can_lin_dist / linear_dist;
+        double ratio_lin_dist = std::min(can_lin_dist / linear_dist, 1.0);
         last_point.transform.translation.x +=
             (next_point.transform.translation.x -
              last_point.transform.translation.x) *
@@ -315,10 +356,13 @@ bool TeleportController::computeHumansStates(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation));
         double can_ang_dist = max_angular_vel_ * ep_time;
-        double ratio_ang_dist = can_ang_dist / std::abs(angular_dist);
+        double ratio_ang_dist =
+            std::min(can_ang_dist / std::abs(angular_dist), 1.0);
         last_point.transform.rotation = tf::createQuaternionMsgFromYaw(
             tf::getYaw(last_point.transform.rotation) +
             (angular_dist * ratio_ang_dist));
+        ROS_INFO("ad=%.2f, cad=%.2f, rad=%.2f", angular_dist, can_ang_dist,
+                 ratio_ang_dist);
 
         // we calculate velocities from distance to last updated point
         linear_dist = std::hypot(last_point.transform.translation.x -
@@ -329,16 +373,16 @@ bool TeleportController::computeHumansStates(
         angular_dist = std::abs(tf::getYaw(last_point.transform.rotation) -
                                 tf::getYaw(last_traj_point.transform.rotation));
         last_point.velocity.angular.z = angular_dist / cycle_time;
+
+        last_point.time_from_start.fromSec(-1.0);
       }
     }
 
-    // ROS_INFO(
-    //     "new pose x=%.2f, y=%.2f, theta=%.2f, lin=%.2f, ang=%.2f, ep=%.2f\n",
-    //     last_point.transform.translation.x,
-    //     last_point.transform.translation.y,
-    //     tf::getYaw(last_point.transform.rotation),
-    //     last_point.velocity.linear.x,
-    //     last_point.velocity.angular.z, ep_time);
+    ROS_INFO(
+        "new x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f\n",
+        last_point.transform.translation.x, last_point.transform.translation.y,
+        tf::getYaw(last_point.transform.rotation), last_point.velocity.linear.x,
+        last_point.velocity.angular.z, last_point.time_from_start.toSec());
 
     last_traj_points_[human_id] = last_point;
     if (next_point_index != 0) {
@@ -349,7 +393,7 @@ bool TeleportController::computeHumansStates(
     transformed_traj.points.insert(transformed_traj.points.begin(), last_point);
   }
 
-  humans= last_traj_points_;
+  humans = last_traj_points_;
 
   for (auto &human_id : reached_goals_) {
     last_traj_points_.erase(human_id);
@@ -580,13 +624,10 @@ bool TeleportController::getProjectedPose(
 
   // return projected point on line between nearest point and point next ot it
   if (np_index == (traj.points.size() - 1)) {
-    if (projectPoint(traj.points[np_index].transform.translation,
-                     traj.points[np_index - 1].transform.translation, pose,
-                     projected_pose)) {
-      next_pose_index = np_index;
-    } else {
-      next_pose_index = np_index - 1;
-    }
+    projectPoint(traj.points[np_index].transform.translation,
+                 traj.points[np_index - 1].transform.translation, pose,
+                 projected_pose);
+    next_pose_index = np_index;
   } else {
     if (projectPoint(traj.points[np_index].transform.translation,
                      traj.points[np_index + 1].transform.translation, pose,
