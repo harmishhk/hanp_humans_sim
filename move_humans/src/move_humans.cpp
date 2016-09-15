@@ -465,6 +465,7 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 
     if (reset_controller_plans_) {
       reset_controller_plans_ = false;
+      new_external_controller_trajs_ = false;
       move_humans::map_traj_point new_human_pts;
       for (auto &controller_plan_kv : *controller_plans_) {
         auto &human_id = controller_plan_kv.first;

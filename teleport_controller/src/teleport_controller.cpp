@@ -239,12 +239,13 @@ bool TeleportController::computeHumansStates(
       next_point_index++;
     }
 
-    if (next_point_index == transformed_traj.points.size()) {
+    if (next_point_index >= (transformed_traj.points.size() - 1)) {
       reached_goals_.push_back(human_id);
       last_traj_point.transform = transformed_traj.points.back().transform;
       last_traj_point.velocity.linear.x = 0.0;
       last_traj_point.velocity.angular.z = 0.0;
       last_traj_point.time_from_start.fromSec(-1.0);
+      last_traj_points_[human_id] = last_traj_point;
       transformed_traj.points.clear();
       continue;
     }
