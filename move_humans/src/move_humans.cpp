@@ -931,7 +931,7 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
       clear_markers.header.frame_id = controller_frame;
       clear_markers.action = 3; //visualization_msgs::Marker::DELETEALL;
       humans_markers.markers.push_back(clear_markers);
-      humans_markers_pub_.publish(clear_markers);
+      humans_markers_pub_.publish(humans_markers);
       clear_human_markers_ = false;
     }
   }

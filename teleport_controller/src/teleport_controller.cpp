@@ -650,6 +650,10 @@ bool TeleportController::projectPoint(const geometry_msgs::Vector3 &line_point1,
 
 void TeleportController::publishPlansFromTrajs(
     const move_humans::map_trajectory &trajs) {
+  if (!last_config_.publish_plans) {
+    return;
+  }
+
   auto now = ros::Time::now();
   hanp_msgs::HumanPathArray human_path_array;
   for (auto &traj_kv : trajs) {
