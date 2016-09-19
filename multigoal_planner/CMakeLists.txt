@@ -8,6 +8,7 @@ project(multigoal_planner)
 ## search for dependencies
 find_package(catkin REQUIRED COMPONENTS
   costmap_2d
+  dynamic_reconfigure
   geometry_msgs
   global_planner
   hanp_msgs
@@ -18,6 +19,11 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
 )
 
+# add dynamic reconfigure config files from cfg directory
+generate_dynamic_reconfigure_options(
+  cfg/MultiGoalPlanner.cfg
+)
+
 ## declare catkin package
 catkin_package(
   INCLUDE_DIRS
@@ -26,6 +32,7 @@ catkin_package(
     multigoal_planner
   CATKIN_DEPENDS
     costmap_2d
+    dynamic_reconfigure
     geometry_msgs
     global_planner
     hanp_msgs

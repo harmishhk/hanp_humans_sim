@@ -50,14 +50,13 @@ private:
   move_humans::map_size last_traversed_indices_;
   move_humans::map_trajectory last_transformed_trajs_;
   move_humans::id_vector reached_goals_;
-  double max_linear_vel_, max_angular_vel_, max_linear_acc_, max_angular_acc_,
-      sq_dist_threshold_, goal_reached_threshold_;
+  double sq_dist_threshold_, goal_reached_threshold_;
   std::string controller_frame_;
 
   boost::mutex controlling_mutex_, configuration_mutex_;
 
   dynamic_reconfigure::Server<TeleportControllerConfig> *dsrv_;
-  teleport_controller::TeleportControllerConfig default_config_;
+  teleport_controller::TeleportControllerConfig default_config_, last_config_;
 
   bool transformPlansAndTrajs(const move_humans::map_pose_vector &plans,
                               const move_humans::map_trajectory &trajs,

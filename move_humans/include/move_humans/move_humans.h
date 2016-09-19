@@ -44,7 +44,7 @@ private:
   boost::shared_ptr<move_humans::ControllerInterface> controller_;
 
   ros::Publisher current_goals_pub_, humans_pub_, humans_markers_pub_;
-  bool publish_human_markers_;
+  bool publish_human_markers_, clear_human_markers_;
 
   bool use_external_trajs_, new_external_controller_trajs_;
   ros::Subscriber controller_trajs_sub_;

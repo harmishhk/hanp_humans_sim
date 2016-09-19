@@ -4,7 +4,6 @@
 #define CONTROLLER_TRAJS_SUB_TOPIC "external_human_plans"
 #define HUMANS_PUB_TOPIC "humans"
 #define HUMANS_MARKERS_PUB_TOPIC "human_markers"
-#define PUBLISH_HUMAN_MARKERS true
 #define DEFAUTL_SEGMENT_TYPE hanp_msgs::TrackedSegmentType::TORSO
 #define HUMANS_ARROWS_ID_OFFSET 100
 #define HUMANS_CYLINDERS_HEIGHT 1.5
@@ -49,20 +48,14 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   private_nh.param("controller_frequency", controller_frequency_, 20.0);
   private_nh.param("shutdown_costmaps", shutdown_costmaps_, false);
   private_nh.param("publish_feedback", publish_feedback_, true);
-  private_nh.param("publish_human_markers", publish_human_markers_,
-                   PUBLISH_HUMAN_MARKERS);
   private_nh.param("human_radius", human_radius_, HUMAN_RADIUS);
 
   current_goals_pub_ =
       private_nh.advertise<geometry_msgs::PoseArray>("current_goals", 0);
   humans_pub_ =
       private_nh.advertise<hanp_msgs::TrackedHumans>(HUMANS_PUB_TOPIC, 1);
-  if (publish_human_markers_) {
-    humans_markers_pub_ = private_nh.advertise<visualization_msgs::MarkerArray>(
+  humans_markers_pub_ = private_nh.advertise<visualization_msgs::MarkerArray>(
         HUMANS_MARKERS_PUB_TOPIC, 1);
-    ROS_DEBUG_NAMED(NODE_NAME, "Will %spublish human markers",
-                    publish_human_markers_ ? "" : "not ");
-  }
 
   controller_trajs_sub_ = private_nh.subscribe(
       CONTROLLER_TRAJS_SUB_TOPIC, 1, &MoveHumans::controllerPathsCB, this);
@@ -112,6 +105,8 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   ROS_INFO_NAMED(NODE_NAME, "move_humans server started");
 
   state_ = move_humans::MoveHumansState::IDLE;
+
+  clear_human_markers_ = false;
 }
 
 MoveHumans::~MoveHumans() {
@@ -180,6 +175,10 @@ void MoveHumans::reconfigureCB(move_humans::MoveHumansConfig &config,
             planner_costmap_ros_)) {
       config.controller = last_config_.controller;
     }
+  }
+
+  if (config.publish_human_markers != last_config_.publish_human_markers) {
+    clear_human_markers_ = !config.publish_human_markers;
   }
 
   last_config_ = config;
@@ -286,13 +285,15 @@ void MoveHumans::actionCB(
   goals = toGlobaolFrame(goals);
   sub_goals = toGlobaolFrame(sub_goals);
 
-  geometry_msgs::PoseArray current_goals;
-  if (goals.size() > 0) {
-    current_goals.header.frame_id = goals.begin()->second.header.frame_id;
-    for (auto &goal_kv : goals) {
-      current_goals.poses.push_back(goal_kv.second.pose);
+  if (last_config_.publish_human_goals) {
+    geometry_msgs::PoseArray current_goals;
+    if (goals.size() > 0) {
+      current_goals.header.frame_id = goals.begin()->second.header.frame_id;
+      for (auto &goal_kv : goals) {
+        current_goals.poses.push_back(goal_kv.second.pose);
+      }
+      current_goals_pub_.publish(current_goals);
     }
-    current_goals_pub_.publish(current_goals);
   }
 
   if (shutdown_costmaps_) {
@@ -849,6 +850,7 @@ void MoveHumans::controllerPathsCB(
 void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
   auto now = ros::Time::now();
   auto controller_frame = controller_costmap_ros_->getGlobalFrameID();
+  auto publish_human_markers = last_config_.publish_human_markers;
 
   hanp_msgs::TrackedHumans humans;
   visualization_msgs::MarkerArray humans_markers;
@@ -868,7 +870,7 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
     human.segments.push_back(human_segment);
     humans.humans.push_back(human);
 
-    if (publish_human_markers_) {
+    if (publish_human_markers) {
       visualization_msgs::Marker human_arrow, human_cylinder;
 
       human_arrow.header.stamp = now;
@@ -919,8 +921,18 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
     humans.header.frame_id = controller_frame;
     humans_pub_.publish(humans);
 
-    if (publish_human_markers_) {
+    if (publish_human_markers) {
       humans_markers_pub_.publish(humans_markers);
+    }
+
+    if (clear_human_markers_) {
+      visualization_msgs::Marker clear_markers;
+      clear_markers.header.stamp = now;
+      clear_markers.header.frame_id = controller_frame;
+      clear_markers.action = 3; //visualization_msgs::Marker::DELETEALL;
+      humans_markers.markers.push_back(clear_markers);
+      humans_markers_pub_.publish(clear_markers);
+      clear_human_markers_ = false;
     }
   }
 }

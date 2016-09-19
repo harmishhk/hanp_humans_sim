@@ -2,6 +2,7 @@
 #define MULTIGOAL_PLANER_H
 
 #include <ros/ros.h>
+#include <dynamic_reconfigure/server.h>
 #include <global_planner/potential_calculator.h>
 #include <global_planner/expander.h>
 #include <global_planner/traceback.h>
@@ -9,8 +10,11 @@
 #include <costmap_2d/costmap_2d.h>
 #include <geometry_msgs/PoseArray.h>
 #include <hanp_msgs/HumanPathArray.h>
+#include <boost/thread.hpp>
 #include <move_humans/types.h>
 #include <move_humans/planner_interface.h>
+
+#include <multigoal_planner/MultiGoalPlannerConfig.h>
 
 namespace multigoal_planner {
 class MultiGoalPlanner : public move_humans::PlannerInterface {
@@ -40,9 +44,13 @@ private:
   ros::Publisher plans_pub_, plans_poses_pub_, potential_pub_;
   void publishPlans(move_humans::map_pose_vector &plans);
 
-  bool initialized_, allow_unknown_, visualize_potential_,
-      visualize_paths_poses_;
-  double default_tolerance_, paths_poses_z_reduce_factor_;
+  dynamic_reconfigure::Server<MultiGoalPlannerConfig> *dsrv_;
+  multigoal_planner::MultiGoalPlannerConfig default_config_, last_config_;
+  void reconfigureCB(MultiGoalPlannerConfig &config, uint32_t level);
+
+  boost::mutex configuration_mutex_;
+  bool initialized_, setup_, allow_unknown_;
+  double default_tolerance_;
   float convert_offset_;
   int publish_scale_;
   double sq_dist_plan_threshold_;

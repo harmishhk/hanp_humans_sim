@@ -1,13 +1,7 @@
 #define NODE_NAME "teleport_controller"
-#define DIST_THRESHOLD 0.2  // distance threshold for pruning the plan
-#define MAX_LINEAR_VEL 0.7  // m/s
-#define MAX_ANGULAR_VEL 0.4 // r/s
-#define MAX_LINEAR_ACC 0.0  // m/s^2
-#define MAX_ANGULAR_ACC 0.0 // r/s^2
 #define PLANS_PUB_TOPIC "plans"
 #define DEFAULT_CONTROLLER_FRAME "map"
 #define M_PI_2 1.57
-#define MAX_START_DIST 1.0 // meters
 #define LINEAR_DIST_EPS 0.001
 #define ANGULAR_DIST_EPS 0.001
 #define EP_TIME_EPS 0.001
@@ -37,14 +31,6 @@ void TeleportController::initialize(std::string name, tf::TransformListener *tf,
       controller_frame_ = DEFAULT_CONTROLLER_FRAME;
     }
 
-    double dist_threshold = DIST_THRESHOLD;
-    private_nh.param("dist_threshold", dist_threshold);
-    sq_dist_threshold_ = dist_threshold * dist_threshold;
-    private_nh.param("max_linear_vel", max_linear_vel_, MAX_LINEAR_VEL);
-    private_nh.param("max_angular_vel", max_angular_vel_, MAX_ANGULAR_VEL);
-    private_nh.param("max_linear_acc", max_linear_acc_, MAX_LINEAR_ACC);
-    private_nh.param("max_angular_acc", max_angular_acc_, MAX_ANGULAR_ACC);
-
     plans_pub_ =
         private_nh.advertise<hanp_msgs::HumanPathArray>(PLANS_PUB_TOPIC, 1);
 
@@ -72,6 +58,8 @@ void TeleportController::reconfigureCB(TeleportControllerConfig &config,
     default_config_ = config;
     setup_ = true;
   }
+
+  last_config_ = config;
 }
 
 bool TeleportController::setPlans(const move_humans::map_pose_vector &plans) {
@@ -180,7 +168,7 @@ bool TeleportController::computeHumansStates(
       double start_dist = std::hypot(
           start_pose.translation.x - last_traj_point.transform.translation.x,
           start_pose.translation.y - last_traj_point.transform.translation.y);
-      if (start_dist > MAX_START_DIST) {
+      if (start_dist > last_config_.reset_dist) {
         ROS_INFO_NAMED(NODE_NAME, "Resetting human %ld controller", human_id);
         last_traj_point = transformed_traj.points.front();
       }
@@ -218,11 +206,11 @@ bool TeleportController::computeHumansStates(
           next_point_index++;
           continue;
         }
-        linear_time = linear_dist / max_linear_vel_;
+        linear_time = linear_dist / last_config_.max_linear_vel;
         angular_dist = std::abs(angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation)));
-        angular_time = angular_dist / max_angular_vel_;
+        angular_time = angular_dist / last_config_.max_angular_vel;
         // angular_time = 0.0;
         step_time = std::max(linear_time, angular_time);
         acc_time += step_time;
@@ -342,7 +330,7 @@ bool TeleportController::computeHumansStates(
                                      last_point.transform.translation.x,
                                  next_point.transform.translation.y -
                                      last_point.transform.translation.y);
-        double can_lin_dist = max_linear_vel_ * ep_time;
+        double can_lin_dist = last_config_.max_linear_vel * ep_time;
         double ratio_lin_dist = std::min(can_lin_dist / linear_dist, 1.0);
         last_point.transform.translation.x +=
             (next_point.transform.translation.x -
@@ -356,7 +344,7 @@ bool TeleportController::computeHumansStates(
         angular_dist = angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation));
-        double can_ang_dist = max_angular_vel_ * ep_time;
+        double can_ang_dist = last_config_.max_angular_vel * ep_time;
         double ratio_ang_dist =
             std::min(can_ang_dist / std::abs(angular_dist), 1.0);
         last_point.transform.rotation = tf::createQuaternionMsgFromYaw(

@@ -4,7 +4,6 @@
 #define SQ_DIST_PLAN_THRESHOLD 0.01
 #define PLANS_PUB_TOPIC "plans"
 #define PLANS_POSES_PUB_TOPIC "plans_poses"
-#define PLANS_POSES_PUB_Z_REDUCE_FACTOR 100.0
 #define POTENTIAL_PUB_TOPIC "potential"
 
 #include <multigoal_planner/multigoal_planner.h>
@@ -29,7 +28,7 @@ MultiGoalPlanner::MultiGoalPlanner(std::string name, tf::TransformListener *tf,
   initialize(name, tf, costmap_ros);
 }
 
-MultiGoalPlanner::~MultiGoalPlanner() {}
+MultiGoalPlanner::~MultiGoalPlanner() { delete dsrv_; }
 
 void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
                                   costmap_2d::Costmap2DROS *costmap_ros) {
@@ -56,11 +55,6 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
                      DEFAULT_TOLERANCE);
     private_nh.param("sq_dist_plan_threshold", sq_dist_plan_threshold_,
                      SQ_DIST_PLAN_THRESHOLD);
-    private_nh.param("visualize_potential", visualize_potential_, false);
-    private_nh.param("visualize_paths_poses", visualize_paths_poses_, true);
-    private_nh.param("paths_poses_z_reduce_factor",
-                     paths_poses_z_reduce_factor_,
-                     PLANS_POSES_PUB_Z_REDUCE_FACTOR);
     private_nh.param("publish_scale", publish_scale_, 100);
 
     planner_->setHasUnknown(allow_unknown_);
@@ -70,20 +64,36 @@ void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
 
     plans_pub_ =
         private_nh.advertise<hanp_msgs::HumanPathArray>(PLANS_PUB_TOPIC, 1);
-    if (visualize_paths_poses_) {
-      plans_poses_pub_ = private_nh.advertise<geometry_msgs::PoseArray>(
-          PLANS_POSES_PUB_TOPIC, 1);
-    }
-    if (visualize_potential_) {
-      potential_pub_ =
-          private_nh.advertise<nav_msgs::OccupancyGrid>(POTENTIAL_PUB_TOPIC, 1);
-    }
+    plans_poses_pub_ = private_nh.advertise<geometry_msgs::PoseArray>(
+        PLANS_POSES_PUB_TOPIC, 1);
+    potential_pub_ =
+        private_nh.advertise<nav_msgs::OccupancyGrid>(POTENTIAL_PUB_TOPIC, 1);
+
+    dsrv_ = new dynamic_reconfigure::Server<MultiGoalPlannerConfig>(private_nh);
+    dynamic_reconfigure::Server<MultiGoalPlannerConfig>::CallbackType cb =
+        boost::bind(&MultiGoalPlanner::reconfigureCB, this, _1, _2);
+    dsrv_->setCallback(cb);
 
     initialized_ = true;
   } else {
     ROS_WARN_NAMED(NODE_NAME, "This planner has already been initialized, you "
                               "can't call it twice, doing nothing");
   }
+}
+
+void MultiGoalPlanner::reconfigureCB(MultiGoalPlannerConfig &config,
+                                     uint32_t level) {
+  boost::mutex::scoped_lock l(configuration_mutex_);
+  if (setup_ && config.restore_defaults) {
+    config = default_config_;
+    config.restore_defaults = false;
+  }
+  if (!setup_) {
+    default_config_ = config;
+    setup_ = true;
+  }
+
+  last_config_ = config;
 }
 
 bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
@@ -271,36 +281,45 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
 }
 
 void MultiGoalPlanner::publishPlans(move_humans::map_pose_vector &plans) {
-  hanp_msgs::HumanPathArray human_path_array;
-  for (auto &plan_kv : plans) {
-    hanp_msgs::HumanPath human_path;
-    if (!plan_kv.second.empty()) {
-      human_path.header.stamp = plan_kv.second.front().header.stamp;
-      human_path.header.frame_id = plan_kv.second.front().header.frame_id;
-      human_path.id = plan_kv.first;
-      human_path.path.header.stamp = human_path.header.stamp;
-      human_path.path.header.frame_id = human_path.header.frame_id;
-      human_path.path.poses = plan_kv.second;
-      human_path_array.paths.push_back(human_path);
+  if (last_config_.publish_human_plans) {
+    hanp_msgs::HumanPathArray human_path_array;
+    for (auto &plan_kv : plans) {
+      hanp_msgs::HumanPath human_path;
+      if (!plan_kv.second.empty()) {
+        human_path.header.stamp = plan_kv.second.front().header.stamp;
+        human_path.header.frame_id = plan_kv.second.front().header.frame_id;
+        human_path.id = plan_kv.first;
+        human_path.path.header.stamp = human_path.header.stamp;
+        human_path.path.header.frame_id = human_path.header.frame_id;
+        human_path.path.poses = plan_kv.second;
+        human_path_array.paths.push_back(human_path);
+      }
+    }
+    if (!human_path_array.paths.empty()) {
+      human_path_array.header.stamp =
+          human_path_array.paths.front().header.stamp;
+      human_path_array.header.frame_id =
+          human_path_array.paths.front().header.frame_id;
+      plans_pub_.publish(human_path_array);
     }
   }
-  if (!human_path_array.paths.empty()) {
-    human_path_array.header.stamp = human_path_array.paths.front().header.stamp;
-    human_path_array.header.frame_id =
-        human_path_array.paths.front().header.frame_id;
-    plans_pub_.publish(human_path_array);
 
-    if (visualize_paths_poses_) {
-      geometry_msgs::PoseArray paths_poses;
-      paths_poses.header.stamp = human_path_array.header.stamp;
-      paths_poses.header.frame_id = human_path_array.header.frame_id;
-      for (auto &path : human_path_array.paths) {
-        for (int i = 0; i < path.path.poses.size(); i++) {
-          auto pose_copy = path.path.poses[i].pose;
-          pose_copy.position.z = i / paths_poses_z_reduce_factor_;
-          paths_poses.poses.push_back(pose_copy);
+  bool header_set = false;
+  if (last_config_.publish_human_poses) {
+    geometry_msgs::PoseArray paths_poses;
+    for (auto &plan_kv : plans) {
+      for (size_t i = 0; i < plan_kv.second.size(); i++) {
+        if (!header_set) {
+          paths_poses.header.stamp = plan_kv.second[i].header.stamp;
+          paths_poses.header.frame_id = plan_kv.second[i].header.frame_id;
         }
+        auto pose_copy = plan_kv.second[i].pose;
+        pose_copy.position.z = i / last_config_.poses_z_reduce_factor;
+        paths_poses.poses.push_back(pose_copy);
       }
+    }
+
+    if (!paths_poses.poses.empty()) {
       plans_poses_pub_.publish(paths_poses);
     }
   }
@@ -348,7 +367,7 @@ bool MultiGoalPlanner::getPlanFromPotential(double start_x, double start_y,
   if (!path_maker_->getPath(potential_array_, start_x, start_y, goal_x, goal_y,
                             path)) {
     ROS_WARN_NAMED(NODE_NAME, "No path from potential using gradient");
-    if (visualize_potential_) {
+    if (last_config_.publish_potential) {
       publishPotential(potential_array_);
     }
     path.clear();
