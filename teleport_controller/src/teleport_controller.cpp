@@ -249,16 +249,16 @@ bool TeleportController::computeHumansStates(
     double last_point_time = last_point.time_from_start.toSec();
     double next_point_time = next_point.time_from_start.toSec();
 
-    ROS_INFO(
-        "n-1 x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f",
-        last_point.transform.translation.x, last_point.transform.translation.y,
-        tf::getYaw(last_point.transform.rotation), last_point.velocity.linear.x,
-        last_point.velocity.angular.z, last_point_time);
-    ROS_INFO(
-        "n+1 x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f ep=%.2f",
-        next_point.transform.translation.x, next_point.transform.translation.y,
-        tf::getYaw(next_point.transform.rotation), next_point.velocity.linear.x,
-        next_point.velocity.angular.z, next_point_time, ep_time);
+    // ROS_INFO(
+    //     "n-1 x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f",
+    //     last_point.transform.translation.x, last_point.transform.translation.y,
+    //     tf::getYaw(last_point.transform.rotation), last_point.velocity.linear.x,
+    //     last_point.velocity.angular.z, last_point_time);
+    // ROS_INFO(
+    //     "n+1 x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f ep=%.2f",
+    //     next_point.transform.translation.x, next_point.transform.translation.y,
+    //     tf::getYaw(next_point.transform.rotation), next_point.velocity.linear.x,
+    //     next_point.velocity.angular.z, next_point_time, ep_time);
 
     if (ep_time > EP_TIME_EPS) {
       if (last_point_time >= 0.0 && next_point_time >= 0.0) {
@@ -290,7 +290,7 @@ bool TeleportController::computeHumansStates(
             (next_point.time_from_start.toSec() -
              last_point.time_from_start.toSec()) *
                 time_ratio);
-        ROS_INFO("tr=%.2f", time_ratio);
+        // ROS_INFO("tr=%.2f", time_ratio);
 
         // // here we first get interpolated velocity linear_dist =
         // std::hypot(next_point.transform.translation.x -
@@ -350,8 +350,8 @@ bool TeleportController::computeHumansStates(
         last_point.transform.rotation = tf::createQuaternionMsgFromYaw(
             tf::getYaw(last_point.transform.rotation) +
             (angular_dist * ratio_ang_dist));
-        ROS_INFO("ad=%.2f, cad=%.2f, rad=%.2f", angular_dist, can_ang_dist,
-                 ratio_ang_dist);
+        // ROS_INFO("ad=%.2f, cad=%.2f, rad=%.2f", angular_dist, can_ang_dist,
+        //          ratio_ang_dist);
 
         // we calculate velocities from distance to last updated point
         linear_dist = std::hypot(last_point.transform.translation.x -
@@ -367,11 +367,11 @@ bool TeleportController::computeHumansStates(
       }
     }
 
-    ROS_INFO(
-        "new x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f\n",
-        last_point.transform.translation.x, last_point.transform.translation.y,
-        tf::getYaw(last_point.transform.rotation), last_point.velocity.linear.x,
-        last_point.velocity.angular.z, last_point.time_from_start.toSec());
+    // ROS_INFO(
+    //     "new x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f\n",
+    //     last_point.transform.translation.x, last_point.transform.translation.y,
+    //     tf::getYaw(last_point.transform.rotation), last_point.velocity.linear.x,
+    //     last_point.velocity.angular.z, last_point.time_from_start.toSec());
 
     last_traj_points_[human_id] = last_point;
     if (next_point_index != 0) {
