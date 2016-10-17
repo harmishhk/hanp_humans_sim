@@ -6,6 +6,7 @@
 #define DELETE_HUMAN_SERVICE_NAME "delete_human"
 #define ADD_SUBGOAL_SERVICE_NAME "add_sub_goal"
 #define UPDATE_GOAL_SERVICE_NAME "update_goal"
+#define TELEPORT_HUMAN_SERVICE_NAME "teleport_human"
 #define GOAL_REACHING_THRESHOLD 0.1 // m
 
 #include "move_humans/move_humans_client.h"
@@ -29,6 +30,8 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
                    std::string(ADD_SUBGOAL_SERVICE_NAME));
   private_nh.param("update_goal_service_name", update_goal_service_name_,
                    std::string(UPDATE_GOAL_SERVICE_NAME));
+  private_nh.param("teleport_human_service_name", teleport_human_service_name_,
+                   std::string(TELEPORT_HUMAN_SERVICE_NAME));
 
   if (!getHumansGoals(private_nh, starts_, goals_)) {
     ROS_ERROR_NAMED(
@@ -48,6 +51,8 @@ MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
       add_subgoal_service_name_, &MoveHumansClient::addSubgoal, this);
   update_goal_server_ = private_nh.advertiseService(
       update_goal_service_name_, &MoveHumansClient::updateGoal, this);
+  teleport_human_server_ = private_nh.advertiseService(
+      teleport_human_service_name_, &MoveHumansClient::teleportHuman, this);
 
   client_thread_ =
       new boost::thread(boost::bind(&MoveHumansClient::clientThread, this));
@@ -383,6 +388,33 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
                          reached_goals_.end());
     message +=
         "Added goal pose for human " + std::to_string(req.human_pose.human_id);
+    ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
+    res.message = message;
+    res.success = true;
+  }
+  client_cond_.notify_one();
+  return true;
+}
+
+bool MoveHumansClient::teleportHuman(move_humans::HumanUpdate::Request &req,
+                                     move_humans::HumanUpdate::Response &res) {
+  boost::unique_lock<boost::mutex> lock(client_mutex_);
+  std::string message;
+  if (starts_.find(req.human_pose.human_id) == starts_.end()) {
+    message += "Human " + std::to_string(req.human_pose.human_id) +
+               " does not exists in the database, please first add human " +
+               std::to_string(req.human_pose.human_id) + " with a start pose";
+    ROS_WARN_NAMED(NODE_NAME, "%s", message.c_str());
+    res.message = message;
+    res.success = false;
+  } else {
+    starts_[req.human_pose.human_id] = req.human_pose.pose;
+    goals_[req.human_pose.human_id] = req.human_pose.pose;
+    reached_goals_.erase(std::remove(reached_goals_.begin(),
+                                     reached_goals_.end(),
+                                     req.human_pose.human_id),
+                         reached_goals_.end());
+    message += "Teleported human " + std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
     res.message = message;
     res.success = true;

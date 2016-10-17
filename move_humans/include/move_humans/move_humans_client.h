@@ -29,9 +29,10 @@ private:
 
   std::string reset_simulation_service_name_, add_human_service_name_,
       delete_human_service_name_, add_subgoal_service_name_,
-      update_goal_service_name_;
+      update_goal_service_name_, teleport_human_service_name_;
   ros::ServiceServer reset_simulation_server_, add_human_server_,
-      delete_human_server_, add_subgoal_server_, update_goal_server_;
+      delete_human_server_, add_subgoal_server_, update_goal_server_,
+      teleport_human_server_;
   bool resetSimulation(std_srvs::Trigger::Request &req,
                        std_srvs::Trigger::Response &res);
   bool addHuman(move_humans::HumanUpdate::Request &req,
@@ -42,6 +43,8 @@ private:
                   move_humans::HumanUpdate::Response &res);
   bool updateGoal(move_humans::HumanUpdate::Request &req,
                   move_humans::HumanUpdate::Response &res);
+  bool teleportHuman(move_humans::HumanUpdate::Request &req,
+                     move_humans::HumanUpdate::Response &res);
 
   void feedbackCB(const MoveHumansFeedbackConstPtr &feedback);
 
