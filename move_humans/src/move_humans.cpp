@@ -279,6 +279,7 @@ void MoveHumans::actionCB(
   if (!validateGoals(*move_humans_goal, starts, sub_goals, goals)) {
     mhas_->setAborted(move_humans::MoveHumansResult(),
                       "Aborting on invalid request");
+    ROS_DEBUG_NAMED(NODE_NAME, "Aborting on invalid request");
     return;
   }
   starts = toGlobaolFrame(starts);
@@ -325,6 +326,7 @@ void MoveHumans::actionCB(
                            goal_poses)) {
           mhas_->setAborted(move_humans::MoveHumansResult(),
                             "Aborting on invalid request");
+          ROS_DEBUG_NAMED(NODE_NAME, "Aborting on invalid request");
           resetState();
           return;
         }
@@ -440,6 +442,8 @@ void MoveHumans::actionCB(
 
   mhas_->setAborted(move_humans::MoveHumansResult(),
                     "Aborting on the goal because the node has been killed");
+  ROS_DEBUG_NAMED(NODE_NAME,
+                  "Aborting on the goal because the node has been killed");
 }
 
 bool MoveHumans::executeCycle(move_humans::map_pose &goals,
@@ -651,6 +655,7 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
     return false;
   }
 
+  // check frame_id for all start, sub-goal and goal poses
   auto frame_id = mh_goal.start_poses[0].pose.header.frame_id;
   for (auto &s_pose : mh_goal.start_poses) {
     if (s_pose.pose.header.frame_id != frame_id) {
@@ -679,6 +684,7 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
     }
   }
 
+  // validate quaternions for all start, sub-goal and goal poses
   for (auto &start : mh_goal.start_poses) {
     if (!isQuaternionValid(start.pose.pose.orientation)) {
       ROS_ERROR_NAMED(NODE_NAME, "Not planning for human %lu, start pose was "
@@ -713,6 +719,7 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
     }
   }
 
+  // check for all starts there exists a goal and vice-versa
   auto its = starts.begin();
   while (its != starts.end()) {
     if (goals.find(its->first) == goals.end()) {
@@ -738,6 +745,33 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
     return false;
   }
 
+  // std::string request;
+  // auto ith = starts.begin();
+  // while (ith != starts.end()) {
+  //   request += "human " + std::to_string(ith->first) + ": \nstart = (" +
+  //              std::to_string(ith->second.pose.position.x) + ", " +
+  //              std::to_string(ith->second.pose.position.y) + ", " +
+  //              std::to_string(tf::getYaw(ith->second.pose.orientation));
+  //   auto sub_goal_it = sub_goals.find(ith->first);
+  //   if (sub_goal_it != sub_goals.end()) {
+  //     for (auto sub_goal : sub_goal_it->second) {
+  //       request += "\nsub-goal = (" +
+  //       std::to_string(sub_goal.pose.position.x) +
+  //                  ", " + std::to_string(sub_goal.pose.position.y) + ", " +
+  //                  std::to_string(tf::getYaw(sub_goal.pose.orientation)) +
+  //                  ")";
+  //     }
+  //   }
+  //   auto goal_it = goals.find(ith->first);
+  //   if (goal_it != goals.end()) {
+  //     request +=
+  //         "\ngoal = (" + std::to_string(goal_it->second.pose.position.x) +
+  //         ", " + std::to_string(goal_it->second.pose.position.y) + ", " +
+  //         std::to_string(tf::getYaw(goal_it->second.pose.orientation)) + ")";
+  //   }
+  //   ith++;
+  // }
+  // ROS_INFO_NAMED(NODE_NAME, "Goals validated:\n:%s", request.c_str());
   return true;
 }
 
