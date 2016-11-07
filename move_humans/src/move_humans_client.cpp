@@ -291,7 +291,14 @@ bool MoveHumansClient::addHuman(move_humans::HumanUpdate::Request &req,
     res.success = true;
   } else {
     starts_[req.human_pose.human_id] = req.human_pose.pose;
-    message += "Added human " + std::to_string(req.human_pose.human_id);
+    message +=
+        "Added human " + std::to_string(req.human_pose.human_id) + " at (" +
+        std::to_string(starts_[req.human_pose.human_id].pose.position.x) +
+        ", " +
+        std::to_string(starts_[req.human_pose.human_id].pose.position.y) +
+        ", " + std::to_string(tf::getYaw(
+                   starts_[req.human_pose.human_id].pose.orientation)) +
+        ")";
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
     res.message = message;
     res.success = true;
@@ -348,8 +355,15 @@ bool MoveHumansClient::addSubgoal(move_humans::HumanUpdate::Request &req,
                                      reached_goals_.end(),
                                      req.human_pose.human_id),
                          reached_goals_.end());
-    message += "Added sub-goal pose for human" +
-               std::to_string(req.human_pose.human_id);
+    message +=
+        "Added sub-goal pose for human" +
+        std::to_string(req.human_pose.human_id) + " at (" +
+        std::to_string(sub_goals_[req.human_pose.human_id].back().pose.position.x) +
+        ", " +
+        std::to_string(sub_goals_[req.human_pose.human_id].back().pose.position.y) +
+        ", " + std::to_string(tf::getYaw(
+                   sub_goals_[req.human_pose.human_id].back().pose.orientation)) +
+        ")";
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
     res.message = message;
     res.success = true;
@@ -387,7 +401,13 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
                                      req.human_pose.human_id),
                          reached_goals_.end());
     message +=
-        "Added goal pose for human " + std::to_string(req.human_pose.human_id);
+        "Added goal pose for human " + std::to_string(req.human_pose.human_id) +
+        " at (" +
+        std::to_string(goals_[req.human_pose.human_id].pose.position.x) + ", " +
+        std::to_string(goals_[req.human_pose.human_id].pose.position.y) + ", " +
+        std::to_string(
+            tf::getYaw(goals_[req.human_pose.human_id].pose.orientation)) +
+        ")";
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
     res.message = message;
     res.success = true;
@@ -414,7 +434,14 @@ bool MoveHumansClient::teleportHuman(move_humans::HumanUpdate::Request &req,
                                      reached_goals_.end(),
                                      req.human_pose.human_id),
                          reached_goals_.end());
-    message += "Teleported human " + std::to_string(req.human_pose.human_id);
+    message +=
+        "Teleported human " + std::to_string(req.human_pose.human_id) +
+        " at (" +
+        std::to_string(starts_[req.human_pose.human_id].pose.position.x) + ", " +
+        std::to_string(starts_[req.human_pose.human_id].pose.position.y) + ", " +
+        std::to_string(
+            tf::getYaw(starts_[req.human_pose.human_id].pose.orientation)) +
+        ")";
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
     res.message = message;
     res.success = true;

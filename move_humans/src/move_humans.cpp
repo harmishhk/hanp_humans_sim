@@ -55,7 +55,7 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   humans_pub_ =
       private_nh.advertise<hanp_msgs::TrackedHumans>(HUMANS_PUB_TOPIC, 1);
   humans_markers_pub_ = private_nh.advertise<visualization_msgs::MarkerArray>(
-        HUMANS_MARKERS_PUB_TOPIC, 1);
+      HUMANS_MARKERS_PUB_TOPIC, 1);
 
   controller_trajs_sub_ = private_nh.subscribe(
       CONTROLLER_TRAJS_SUB_TOPIC, 1, &MoveHumans::controllerPathsCB, this);
@@ -929,7 +929,7 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
       visualization_msgs::Marker clear_markers;
       clear_markers.header.stamp = now;
       clear_markers.header.frame_id = controller_frame;
-      clear_markers.action = 3; //visualization_msgs::Marker::DELETEALL;
+      clear_markers.action = 3; // visualization_msgs::Marker::DELETEALL;
       humans_markers.markers.push_back(clear_markers);
       humans_markers_pub_.publish(humans_markers);
       clear_human_markers_ = false;
