@@ -387,6 +387,8 @@ bool TeleportController::computeHumansStates(
   for (auto &human_id : reached_goals_) {
     last_traj_points_.erase(human_id);
     transformed_trajs.erase(human_id);
+    plans_.erase(human_id);
+    trajs_.erase(human_id);
   }
 
   if (last_traj_points_.empty()) {
@@ -436,6 +438,10 @@ bool TeleportController::transformPlansAndTrajs(
     auto transformed_traj_it = last_transformed_trajs_.find(human_id);
     if (transformed_traj_it != last_transformed_trajs_.end()) {
       transformed_trajs[human_id] = transformed_traj_it->second;
+      ROS_DEBUG_NAMED(
+          NODE_NAME,
+          "Giving pre-transformed trajectory (from plan) for human %ld",
+          human_id);
       continue;
     }
 
@@ -467,6 +473,10 @@ bool TeleportController::transformPlansAndTrajs(
         }
         transformed_trajs[human_id] = transformed_traj;
         last_transformed_trajs_[human_id] = transformed_traj;
+        ROS_DEBUG_NAMED(
+            NODE_NAME,
+            "Giving new transformed trajectory (from plan) for human %ld",
+            human_id);
       } catch (tf::LookupException &ex) {
         ROS_ERROR_NAMED(NODE_NAME, "No Transform available Error: %s\n",
                         ex.what());
@@ -491,6 +501,9 @@ bool TeleportController::transformPlansAndTrajs(
       }
       transformed_trajs[human_id] = transformed_traj;
       last_transformed_trajs_[human_id] = transformed_traj;
+      ROS_DEBUG_NAMED(NODE_NAME,
+                     "Giving converted trajectory (from plan) for human %ld",
+                     human_id);
     }
   }
 
@@ -517,6 +530,10 @@ bool TeleportController::transformPlansAndTrajs(
     auto transformed_traj_it = last_transformed_trajs_.find(human_id);
     if (transformed_traj_it != last_transformed_trajs_.end()) {
       transformed_trajs[human_id] = transformed_traj_it->second;
+      ROS_DEBUG_NAMED(
+          NODE_NAME,
+          "Giving pre-transformed trajectory (from traj) for human %ld",
+          human_id);
       continue;
     }
 
@@ -556,6 +573,10 @@ bool TeleportController::transformPlansAndTrajs(
         }
         transformed_trajs[human_id] = transformed_traj;
         last_transformed_trajs_[human_id] = transformed_traj;
+        ROS_DEBUG_NAMED(
+            NODE_NAME,
+            "Giving transformed trajectory (from traj) for human %ld",
+            human_id);
       } catch (tf::LookupException &ex) {
         ROS_ERROR_NAMED(NODE_NAME, "No Transform available Error: %s\n",
                         ex.what());
@@ -571,6 +592,9 @@ bool TeleportController::transformPlansAndTrajs(
       ROS_INFO("givng old traj for human %ld", human_id);
       transformed_trajs[human_id] = traj;
       last_transformed_trajs_[human_id] = traj;
+      ROS_DEBUG_NAMED(NODE_NAME,
+                     "Giving converted trajectory (from traj) for human %ld",
+                     human_id);
     }
   }
 

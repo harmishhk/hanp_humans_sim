@@ -513,8 +513,6 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
           //                                  reached_humans.end(),
           //                                  human_trajectory.id),
           //                      reached_humans.end());
-          ROS_DEBUG_NAMED(NODE_NAME, "Using external tajectory for human %ld",
-                          human_trajectory.id);
         }
       }
       lock.unlock();

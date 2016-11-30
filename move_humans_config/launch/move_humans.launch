@@ -1,12 +1,14 @@
 <launch>
   <!-- start map_server with a map -->
-  <node name="map_server" pkg="map_server" type="map_server" args="$(find move_humans_config)/maps/laas_adream.yaml"/>
+  <!--<node name="map_server" pkg="map_server" type="map_server" args="$(find move_humans_config)/maps/laas_adream.yaml"/>-->
 
   <!-- transform between humans_frame and map -->
   <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
 
   <!-- start move_humans node with multigoal_planner and teleport_controller -->
   <node name="move_humans_node" pkg="move_humans" type="move_humans" output="screen" required="true">
+    <!--<remap from="/move_humans_node/external_human_plans" to="/move_base_node/TebLocalPlannerROS/human_local_plans"/>-->
+
     <rosparam file="$(find move_humans_config)/config/move_humans_params.yaml" command="load"/>
 
     <rosparam file="$(find move_humans_config)/config/planner_costmap_params.yaml" command="load" ns="planner_costmap" />
@@ -23,5 +25,5 @@
   <!-- launch rviz if asked -->
   <arg name="rviz" default="false"/>
   <node name="rviz" pkg="rviz" type="rviz" args="-d $(find move_humans_config)/rviz/move_humans.rviz" if="$(arg rviz)"/>
-  <include file="$(find move_humans_config)/launch/rosbridge.launch" unless="$(arg rviz)"/>
+  <!--<include file="$(find move_humans_config)/launch/rosbridge.launch" unless="$(arg rviz)"/>-->
 </launch>
