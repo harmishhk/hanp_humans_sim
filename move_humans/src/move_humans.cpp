@@ -896,7 +896,11 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
     human_segment.pose.pose.orientation = human_pt_kv.second.transform.rotation;
     human_segment.pose.covariance[0] = human_radius_;
     human_segment.pose.covariance[7] = human_radius_;
-    human_segment.twist.twist = human_pt_kv.second.velocity;
+
+    auto yaw = tf::getYaw(human_segment.pose.pose.orientation);
+    human_segment.twist.twist.linear.x = human_pt_kv.second.velocity.linear.x * std::cos(yaw);
+    human_segment.twist.twist.linear.y = human_pt_kv.second.velocity.linear.x * std::sin(yaw);
+    human_segment.twist.twist.angular.z = human_pt_kv.second.velocity.angular.z;
     hanp_msgs::TrackedHuman human;
     human.track_id = human_pt_kv.first;
     human.segments.push_back(human_segment);
