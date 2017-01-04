@@ -359,8 +359,8 @@ bool TeleportController::computeHumansStates(
                                  last_point.transform.translation.y -
                                      last_traj_point.transform.translation.y);
         last_point.velocity.linear.x = linear_dist / cycle_time;
-        angular_dist = std::abs(tf::getYaw(last_point.transform.rotation) -
-                                tf::getYaw(last_traj_point.transform.rotation));
+        angular_dist = tf::getYaw(last_point.transform.rotation) -
+                       tf::getYaw(last_traj_point.transform.rotation);
         last_point.velocity.angular.z = angular_dist / cycle_time;
 
         last_point.time_from_start.fromSec(-1.0);
