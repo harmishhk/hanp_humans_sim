@@ -6,6 +6,8 @@
 #define ANGULAR_DIST_EPS 0.001
 #define EP_TIME_EPS 0.001
 #define POINT_JUMP_EPS 0.001
+#define ANG_VEL_EPS 0.001
+#define THROTTLE_TIME 1 // seconds
 
 #include <pluginlib/class_list_macros.h>
 #include <angles/angles.h>
@@ -64,25 +66,29 @@ void TeleportController::reconfigureCB(TeleportControllerConfig &config,
 
 bool TeleportController::setPlans(const move_humans::map_pose_vector &plans) {
   move_humans::map_trajectory trajectory_map;
-  return setPlans(plans, trajectory_map);
+  move_humans::map_twist twist_map;
+  return setPlans(plans, trajectory_map, twist_map);
 }
 
 bool TeleportController::setPlans(
     const move_humans::map_pose_vector &plans,
-    const move_humans::map_trajectory &trajectories) {
+    const move_humans::map_trajectory &trajectories,
+    const move_humans::map_twist &vels) {
   if (!isInitialized()) {
     ROS_ERROR_NAMED(NODE_NAME, "This controller has not been initialized");
     return false;
   }
 
-  ROS_DEBUG_NAMED(NODE_NAME, "Got %ld plan%s and %ld trajector%s", plans.size(),
-                  plans.size() > 1 ? "s" : "", trajectories.size(),
-                  trajectories.size() > 0 ? "y" : "ies");
+  ROS_DEBUG_NAMED(NODE_NAME, "Got %ld plan%s, %ld trajector%s and %ld twist%s",
+                  plans.size(), plans.size() == 1 ? "" : "s",
+                  trajectories.size(), trajectories.size() == 1 ? "y" : "ies",
+                  vels.size(), vels.size() == 1 ? "" : "s");
 
   for (auto &plan_kv : plans) {
     auto &human_id = plan_kv.first;
     auto &plan = plan_kv.second;
 
+    // new plans received, so remove entries from reached_goals_
     reached_goals_.erase(
         std::remove(reached_goals_.begin(), reached_goals_.end(), human_id),
         reached_goals_.end());
@@ -95,6 +101,7 @@ bool TeleportController::setPlans(
     auto &human_id = trajectory_kv.first;
     auto &trajectory = trajectory_kv.second;
 
+    // new trajectories received, so remove entries from reached_goals_
     reached_goals_.erase(
         std::remove(reached_goals_.begin(), reached_goals_.end(), human_id),
         reached_goals_.end());
@@ -110,6 +117,25 @@ bool TeleportController::setPlans(
     trajs_[human_id] = trajectory;
     if (trajs_[human_id].points.size() > 1) {
       trajs_[human_id].points.erase(trajs_[human_id].points.begin());
+    }
+  }
+
+  vels_.clear();
+  for (auto &vel_kv : vels) {
+    auto &human_id = vel_kv.first;
+    auto &human_twist = vel_kv.second;
+
+    // new velocities received, so remove entries from reached_goals_
+    reached_goals_.erase(
+        std::remove(reached_goals_.begin(), reached_goals_.end(), human_id),
+        reached_goals_.end());
+
+    // velocity moder override plans
+    plans_.erase(human_id);
+
+    // update velocities that will be used at next iteration of controller
+    if (human_twist.linear.z != -1.0) {
+      vels_[human_id] = human_twist;
     }
   }
 
@@ -382,6 +408,39 @@ bool TeleportController::computeHumansStates(
     transformed_traj.points.insert(transformed_traj.points.begin(), last_point);
   }
 
+  // velocity control mode
+  for (auto &vel_kv : vels_) {
+    auto last_traj_points_it = last_traj_points_.find(vel_kv.first);
+    auto &vel = vel_kv.second;
+    if (last_traj_points_it != last_traj_points_.end()) {
+      auto &last_traj_point = last_traj_points_it->second;
+      if (std::abs(vel.angular.z) > ANG_VEL_EPS) {
+        double r = std::hypot(vel.linear.x, vel.linear.y) / vel.angular.z;
+        double theta = vel.angular.z * cycle_time;
+        double crd = r * 2 * std::sin(theta / 2);
+        double alpha = std::atan2(vel.linear.y, vel.linear.x) + (theta / 2);
+        last_traj_point.transform.translation.x += (crd * std::cos(alpha));
+        last_traj_point.transform.translation.y += (crd * std::sin(alpha));
+        last_traj_point.transform.rotation = tf::createQuaternionMsgFromYaw(
+            tf::getYaw(last_traj_point.transform.rotation) + theta);
+      } else {
+        last_traj_point.transform.translation.x += (vel.linear.x * cycle_time);
+        last_traj_point.transform.translation.y += (vel.linear.y * cycle_time);
+      }
+
+      // ROS_INFO("new x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f",
+      //          last_traj_point.transform.translation.x,
+      //          last_traj_point.transform.translation.y,
+      //          tf::getYaw(last_traj_point.transform.rotation),
+      //          last_traj_point.velocity.linear.x,
+      //          last_traj_point.velocity.angular.z,
+      //          last_traj_point.time_from_start.toSec());
+    } else {
+      ROS_WARN_THROTTLE_NAMED(THROTTLE_TIME, NODE_NAME,
+                              "trying to twist human without plans");
+    }
+  }
+
   humans = last_traj_points_;
 
   for (auto &human_id : reached_goals_) {
@@ -416,9 +475,17 @@ bool TeleportController::transformPlansAndTrajs(
     move_humans::map_trajectory &transformed_trajs) {
   transformed_trajs.clear();
 
+  int skipped = 0;
+
   for (auto &plan_kv : plans) {
     auto &human_id = plan_kv.first;
     auto &plan = plan_kv.second;
+
+    // skip if velocity mode is activated for this human
+    if (vels_.find(human_id) != vels_.end()) {
+      skipped++;
+      continue;
+    }
 
     if (plan.empty()) {
       ROS_ERROR_NAMED(NODE_NAME, "Received empty plan for human %ld", human_id);
@@ -511,6 +578,12 @@ bool TeleportController::transformPlansAndTrajs(
     auto &human_id = traj_kv.first;
     auto &traj = traj_kv.second;
 
+    // skip if velocity mode is activated for this human
+    if (vels_.find(human_id) != vels_.end()) {
+      skipped++;
+      continue;
+    }
+
     if (traj.points.empty()) {
       ROS_ERROR_NAMED(NODE_NAME, "Received empty trajectory for human %ld",
                       human_id);
@@ -589,7 +662,6 @@ bool TeleportController::transformPlansAndTrajs(
         continue;
       }
     } else {
-      ROS_INFO("givng old traj for human %ld", human_id);
       transformed_trajs[human_id] = traj;
       last_transformed_trajs_[human_id] = traj;
       ROS_DEBUG_NAMED(NODE_NAME,
@@ -598,7 +670,7 @@ bool TeleportController::transformPlansAndTrajs(
     }
   }
 
-  return !transformed_trajs.empty();
+  return (plans.size() + trajs.size() == transformed_trajs.size() + skipped);
 }
 
 bool TeleportController::getProjectedPose(

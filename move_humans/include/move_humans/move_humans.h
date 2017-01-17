@@ -9,6 +9,7 @@
 #include <std_srvs/SetBool.h>
 #include <dynamic_reconfigure/server.h>
 #include <hanp_msgs/HumanTrajectoryArray.h>
+#include <hanp_msgs/HumanTwistArray.h>
 
 #include "move_humans/types.h"
 #include "move_humans/planner_interface.h"
@@ -47,9 +48,10 @@ private:
   bool clear_human_markers_;
 
   bool use_external_trajs_, new_external_controller_trajs_;
-  ros::Subscriber controller_trajs_sub_;
+  ros::Subscriber controller_trajs_sub_, controller_twists_sub_;
   void
   controllerPathsCB(const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array);
+  void controllerTwistsCB(const hanp_msgs::HumanTwistArrayConstPtr twist_array);
   hanp_msgs::HumanTrajectoryArrayConstPtr external_controller_trajs_;
 
   ros::ServiceServer follow_external_path_srv_;
@@ -72,17 +74,19 @@ private:
       current_planner_plans_;
   move_humans::map_size cp_indices_;
   move_humans::map_trajectory current_controller_trajectories_;
+  move_humans::map_twist current_controller_vels_;
 
   MoveHumansState state_;
   bool setup_, shutdown_costmaps_, new_global_plans_, reset_controller_plans_,
       publish_feedback_;
-  double human_radius_;
+  double human_radius_, external_vels_timeout_;
+  map_twist_time external_vels_;
 
   double planner_frequency_, controller_frequency_;
   bool p_freq_change_, c_freq_change_;
 
   bool run_planner_;
-  boost::mutex planner_mutex_, external_trajs_mutex_;
+  boost::mutex planner_mutex_, external_trajs_mutex_, external_vels_mutex_;
   boost::condition_variable planner_cond_;
   move_humans::map_pose planner_starts_, planner_goals_;
   move_humans::map_pose_vector planner_sub_goals_;

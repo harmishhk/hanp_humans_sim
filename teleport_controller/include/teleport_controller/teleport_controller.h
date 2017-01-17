@@ -25,7 +25,8 @@ public:
 
   bool setPlans(const move_humans::map_pose_vector &plans);
   bool setPlans(const move_humans::map_pose_vector &plans,
-                const move_humans::map_trajectory &twists);
+                const move_humans::map_trajectory &trajectories,
+                const move_humans::map_twist &vels);
 
   bool computeHumansStates(move_humans::map_traj_point &humans);
 
@@ -46,6 +47,7 @@ private:
 
   move_humans::map_pose_vector plans_;
   move_humans::map_trajectory trajs_;
+  move_humans::map_twist vels_;
   move_humans::map_traj_point last_traj_points_;
   move_humans::map_size last_traversed_indices_;
   move_humans::map_trajectory last_transformed_trajs_;
