@@ -48,6 +48,7 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
                    std::string("move_humans/ControllerInterface"));
   private_nh.param("planner_frequency", planner_frequency_, 0.0);
   private_nh.param("controller_frequency", controller_frequency_, 20.0);
+  private_nh.param("publish_frequency", publish_frequency_, 5.0);
   private_nh.param("shutdown_costmaps", shutdown_costmaps_, false);
   private_nh.param("publish_feedback", publish_feedback_, true);
   private_nh.param("human_radius", human_radius_, HUMAN_RADIUS);
@@ -71,6 +72,10 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   follow_external_path_srv_ =
       private_nh.advertiseService(FOLLOW_EXTERNAL_PATHS_SERVICE_NAME,
                                   &MoveHumans::followExternalPaths, this);
+
+  publish_timer_ = private_nh.createTimer(ros::Duration(1 / publish_frequency_),
+                                          &MoveHumans::publishCallback, this);
+  publish_timer_.stop();
 
   planner_plans_ = new move_humans::map_pose_vectors();
   latest_plans_ = new move_humans::map_pose_vectors();
@@ -166,6 +171,11 @@ void MoveHumans::reconfigureCB(move_humans::MoveHumansConfig &config,
   if (controller_frequency_ != config.controller_frequency) {
     controller_frequency_ = config.controller_frequency;
     c_freq_change_ = true;
+  }
+
+  if (publish_frequency_ != config.publish_frequency) {
+    publish_frequency_ = config.publish_frequency;
+    publish_timer_.setPeriod(ros::Duration(1 / publish_frequency_));
   }
 
   if (config.planner != last_config_.planner) {
@@ -288,6 +298,8 @@ void MoveHumans::actionCB(
     ROS_DEBUG_NAMED(NODE_NAME, "Aborting on invalid request");
     return;
   }
+  publish_timer_.stop();
+  last_published_humans_.clear();
   starts = toGlobaolFrame(starts);
   goals = toGlobaolFrame(goals);
   sub_goals = toGlobaolFrame(sub_goals);
@@ -337,6 +349,8 @@ void MoveHumans::actionCB(
           return;
         }
 
+        publish_timer_.stop();
+        last_published_humans_.clear();
         starts = toGlobaolFrame(start_poses);
         goals = toGlobaolFrame(goal_poses);
         sub_goals = toGlobaolFrame(sub_goal_poses);
@@ -425,6 +439,7 @@ void MoveHumans::actionCB(
     ros::WallTime start = ros::WallTime::now();
 
     if (executeCycle(goals, global_plans)) {
+      publish_timer_.start();
       return;
     }
 
@@ -549,10 +564,10 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
               sub_goal_vector.erase(sub_goal_vector.begin());
             } else {
               planner_goals_.erase(human_id);
-        }
+            }
           } else {
             planner_goals_.erase(human_id);
-      }
+          }
         }
       }
 
@@ -959,9 +974,13 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
   auto controller_frame = controller_costmap_ros_->getGlobalFrameID();
   auto publish_human_markers = last_config_.publish_human_markers;
 
+  for (auto &human_pt_kv : human_pts) {
+    last_published_humans_[human_pt_kv.first] = human_pt_kv.second;
+  }
+
   hanp_msgs::TrackedHumans humans;
   visualization_msgs::MarkerArray humans_markers;
-  for (auto &human_pt_kv : human_pts) {
+  for (auto &human_pt_kv : last_published_humans_) {
     hanp_msgs::TrackedSegment human_segment;
     human_segment.type = DEFAUTL_SEGMENT_TYPE;
     human_segment.pose.pose.position.x =
@@ -1048,5 +1067,10 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
       clear_human_markers_ = false;
     }
   }
+}
+
+void MoveHumans::publishCallback(const ros::TimerEvent &timer_event) {
+  move_humans::map_traj_point empty;
+  publishHumans(empty);
 }
 };

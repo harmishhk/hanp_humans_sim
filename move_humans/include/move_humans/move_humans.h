@@ -82,7 +82,7 @@ private:
   double human_radius_, external_vels_timeout_;
   map_twist_time external_vels_;
 
-  double planner_frequency_, controller_frequency_;
+  double planner_frequency_, controller_frequency_, publish_frequency_;
   bool p_freq_change_, c_freq_change_;
 
   bool run_planner_;
@@ -113,6 +113,10 @@ private:
                      move_humans::map_pose_vector &sub_goals,
                      move_humans::map_pose &goals);
   void publishHumans(const move_humans::map_traj_point &human_pts);
+  move_humans::map_traj_point last_published_humans_;
+
+  ros::Timer publish_timer_;
+  void publishCallback(const ros::TimerEvent &timer_event);
 };
 }; // namespace move_humans
 
