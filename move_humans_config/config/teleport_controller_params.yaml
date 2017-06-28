@@ -1,4 +1,4 @@
-max_linear_vel: 0.9
+max_linear_vel: 0.6
 max_angular_vel: 1.1
 publish_human_markers: true
 human_radius: 0.35
