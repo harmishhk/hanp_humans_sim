@@ -9,7 +9,7 @@ origin_x: -100.0
 origin_y: -100.0
 plugins:
  - {name: static_map, type: "costmap_2d::StaticLayer"}
-# - {name: obstacles, type: "costmap_2d::VoxelLayer"}
+ #- {name: obstacles, type: "costmap_2d::VoxelLayer"}
  - {name: inflater, type: "costmap_2d::InflationLayer"}
 # obstacles:
 #     observation_sources: /scan
