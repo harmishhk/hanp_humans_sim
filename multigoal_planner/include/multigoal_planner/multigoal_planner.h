@@ -8,6 +8,8 @@
 #include <global_planner/traceback.h>
 #include <global_planner/orientation_filter.h>
 #include <costmap_2d/costmap_2d.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_listener.h>
 #include <geometry_msgs/PoseArray.h>
 #include <hanp_msgs/HumanPathArray.h>
 #include <boost/thread.hpp>
@@ -20,11 +22,11 @@ namespace multigoal_planner {
 class MultiGoalPlanner : public move_humans::PlannerInterface {
 public:
   MultiGoalPlanner();
-  MultiGoalPlanner(std::string name, tf::TransformListener *tf,
+  MultiGoalPlanner(std::string name, tf2_ros::Buffer *tf2,
                    costmap_2d::Costmap2DROS *costmap_ros);
   ~MultiGoalPlanner();
 
-  void initialize(std::string name, tf::TransformListener *tf,
+  void initialize(std::string name, tf2_ros::Buffer *tf2,
                   costmap_2d::Costmap2DROS *costmap_ros);
 
   bool makePlans(const move_humans::map_pose &starts,
@@ -37,7 +39,7 @@ public:
                  move_humans::map_pose_vectors &plans);
 
 private:
-  tf::TransformListener *tf_;
+  tf2_ros::Buffer *tf2_;
   costmap_2d::Costmap2DROS *costmap_ros_;
   costmap_2d::Costmap2D *costmap_;
 

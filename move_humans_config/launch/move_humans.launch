@@ -8,6 +8,7 @@
   <!-- start move_humans node with multigoal_planner and teleport_controller -->
   <node name="move_humans_node" pkg="move_humans" type="move_humans" output="screen" required="true">
     <remap from="/move_humans_node/external_human_plans" to="/move_base_node/TebLocalPlannerROS/human_local_trajs"/>
+    <remap from="/move_humans_node/robot_position" to="/move_base_node/TebLocalPlannerROS/local_traj"/>
 
     <rosparam file="$(find move_humans_config)/config/move_humans_params.yaml" command="load"/>
 

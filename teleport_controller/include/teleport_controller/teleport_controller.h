@@ -8,6 +8,8 @@
 #include <hanp_msgs/HumanPathArray.h>
 #include <boost/thread.hpp>
 #include <move_humans/controller_interface.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <teleport_controller/TeleportControllerConfig.h>
 
@@ -16,11 +18,11 @@ namespace teleport_controller {
 class TeleportController : public move_humans::ControllerInterface {
 public:
   TeleportController();
-  TeleportController(std::string name, tf::TransformListener *tf,
+  TeleportController(std::string name, tf2_ros::Buffer *tf2,
                      costmap_2d::Costmap2DROS *costmap_ros);
   ~TeleportController();
 
-  void initialize(std::string name, tf::TransformListener *tf,
+  void initialize(std::string name, tf2_ros::Buffer *tf2,
                   costmap_2d::Costmap2DROS *costmap_ros);
 
   bool setPlans(const move_humans::map_pose_vector &plans);
@@ -41,7 +43,7 @@ private:
   void reconfigureCB(TeleportControllerConfig &config, uint32_t level);
 
   costmap_2d::Costmap2DROS *costmap_ros_;
-  tf::TransformListener *tf_;
+  tf2_ros::Buffer *tf2_;
 
   ros::Publisher plans_pub_;
 

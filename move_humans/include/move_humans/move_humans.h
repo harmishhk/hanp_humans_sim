@@ -10,6 +10,9 @@
 #include <dynamic_reconfigure/server.h>
 #include <hanp_msgs/HumanTrajectoryArray.h>
 #include <hanp_msgs/HumanTwistArray.h>
+#include <hanp_msgs/TrajectoryPointMsg.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "move_humans/types.h"
 #include "move_humans/planner_interface.h"
@@ -17,6 +20,7 @@
 #include <move_humans/MoveHumansConfig.h>
 #include <move_humans/HumanPose.h>
 #include <move_humans/MoveHumansAction.h>
+
 
 namespace move_humans {
 enum MoveHumansState { PLANNING, CONTROLLING, IDLE };
@@ -26,14 +30,16 @@ typedef actionlib::SimpleActionServer<move_humans::MoveHumansAction>
 
 class MoveHumans {
 public:
-  MoveHumans(tf::TransformListener &tf);
+  MoveHumans(tf2_ros::Buffer &tf2);
   virtual ~MoveHumans();
 
   bool executeCycle(move_humans::map_pose &goals,
                     move_humans::map_pose_vector &global_plans);
 
 private:
-  tf::TransformListener &tf_;
+  // tf::TransformListener &tf_;
+  tf2_ros::Buffer &tf2_;
+  // tf2_ros::TransformListener &tf2_;
 
   MoveHumansActionServer *mhas_;
   void actionCB(const move_humans::MoveHumansGoalConstPtr &move_humans_goal);
@@ -48,10 +54,14 @@ private:
   bool clear_human_markers_;
 
   bool use_external_trajs_, new_external_controller_trajs_;
-  ros::Subscriber controller_trajs_sub_, controller_twists_sub_;
-  void
-  controllerPathsCB(const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array);
+  ros::Subscriber controller_trajs_sub_, controller_twists_sub_, robot_pos_sub_;
+
+
+  void controllerPathsCB(const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array);
   void controllerTwistsCB(const hanp_msgs::HumanTwistArrayConstPtr twist_array);
+  void RobotPosCB(hanp_msgs::Trajectory trajectory);
+
+  hanp_msgs::TrajectoryPoint robot_pos;
   hanp_msgs::HumanTrajectoryArrayConstPtr external_controller_trajs_;
 
   ros::ServiceServer follow_external_path_srv_;

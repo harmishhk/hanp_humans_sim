@@ -22,23 +22,25 @@ MultiGoalPlanner::MultiGoalPlanner()
     : tf_(NULL), costmap_ros_(NULL), initialized_(false), allow_unknown_(true) {
 }
 
-MultiGoalPlanner::MultiGoalPlanner(std::string name, tf::TransformListener *tf,
+MultiGoalPlanner::MultiGoalPlanner(std::string name, tf2_ros::Buffer *tf2,
                                    costmap_2d::Costmap2DROS *costmap_ros)
-    : tf_(NULL), costmap_ros_(NULL), initialized_(false), allow_unknown_(true) {
-  initialize(name, tf, costmap_ros);
+    : tf2_(NULL), costmap_ros_(NULL), initialized_(false), allow_unknown_(true) {
+  initialize(name, tf2, costmap_ros);
 }
 
 MultiGoalPlanner::~MultiGoalPlanner() { delete dsrv_; }
 
-void MultiGoalPlanner::initialize(std::string name, tf::TransformListener *tf,
+void MultiGoalPlanner::initialize(std::string name, tf2_ros::Buffer *tf2,
                                   costmap_2d::Costmap2DROS *costmap_ros) {
   if (!initialized_) {
-    tf_ = tf;
+    tf2_ = tf2;
     costmap_ros_ = costmap_ros;
+
     costmap_ = costmap_ros_->getCostmap();
     planner_frame_ = costmap_ros_->getGlobalFrameID();
 
     auto cx = costmap_->getSizeInCellsX(), cy = costmap_->getSizeInCellsY();
+    ROS_INFO_NAMED(NODE_NAME, "Costmap Xl: %f, Yl: %f", costmap_->getSizeInMetersX(),costmap_->getSizeInMetersY());
 
     p_calc_ = new global_planner::QuadraticCalculator(cx, cy);
     planner_ = new global_planner::DijkstraExpansion(p_calc_, cx, cy);

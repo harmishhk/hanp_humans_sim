@@ -22,11 +22,11 @@ TeleportController::TeleportController() : initialized_(false), setup_(false) {}
 
 TeleportController::~TeleportController() { delete dsrv_; }
 
-void TeleportController::initialize(std::string name, tf::TransformListener *tf,
+void TeleportController::initialize(std::string name, tf2_ros::Buffer *tf2,
                                     costmap_2d::Costmap2DROS *costmap_ros) {
   if (!isInitialized()) {
     ros::NodeHandle private_nh("~/" + name);
-    tf_ = tf;
+    tf2_ = tf2;
     costmap_ros_ = costmap_ros;
     controller_frame_ = costmap_ros_->getGlobalFrameID();
     if (controller_frame_.compare("") == 0) {
@@ -517,9 +517,9 @@ bool TeleportController::transformPlansAndTrajs(
                controller_frame_.c_str());
       try {
         tf::StampedTransform plan_to_controller_transform;
-        tf_->waitForTransform(controller_frame_, plan[0].header.frame_id,
+        tf2_->waitForTransform(controller_frame_, plan[0].header.frame_id,
                               ros::Time(0), ros::Duration(0.5));
-        tf_->lookupTransform(controller_frame_, plan[0].header.frame_id,
+        tf2_->lookupTransform(controller_frame_, plan[0].header.frame_id,
                              ros::Time(0), plan_to_controller_transform);
 
         tf::Transform tf_trans;
@@ -613,12 +613,12 @@ bool TeleportController::transformPlansAndTrajs(
     if (traj.header.frame_id != controller_frame_) {
       try {
         tf::StampedTransform traj_to_controller_transform;
-        tf_->waitForTransform(controller_frame_, traj.header.frame_id,
+        tf2_->waitForTransform(controller_frame_, traj.header.frame_id,
                               ros::Time(0), ros::Duration(0.5));
-        tf_->lookupTransform(controller_frame_, traj.header.frame_id,
+        tf2_->lookupTransform(controller_frame_, traj.header.frame_id,
                              ros::Time(0), traj_to_controller_transform);
         geometry_msgs::Twist traj_vel_in_controller_frame;
-        tf_->lookupTwist(controller_frame_, traj.header.frame_id, ros::Time(0),
+        tf2_->lookupTwist(controller_frame_, traj.header.frame_id, ros::Time(0),
                          ros::Duration(0.1), traj_vel_in_controller_frame);
 
         tf::Transform tf_trans;

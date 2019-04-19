@@ -12,7 +12,7 @@
 #include "move_humans/move_humans_client.h"
 
 namespace move_humans {
-MoveHumansClient::MoveHumansClient(tf::TransformListener &tf) : tf_(tf) {
+MoveHumansClient::MoveHumansClient(tf2_ros::Buffer &tf2) : tf2_(tf2) {
   ros::NodeHandle private_nh("~");
 
   mhac_ = new MoveHumansActionClient("/move_humans_node/action_server", true);
@@ -392,7 +392,7 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
     message += "Updated goal pose for human " +
                std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
-    //ROS_INFO_NAMED(NODE_NAME, "%s", std::to_string(req.human_pose.pose)); 
+    //ROS_INFO_NAMED(NODE_NAME, "%s", std::to_string(req.human_pose.pose));
     res.message = message;
     res.success = true;
   } else {

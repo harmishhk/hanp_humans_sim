@@ -3,6 +3,7 @@
 
 #include <costmap_2d/costmap_2d_ros.h>
 #include <tf/transform_listener.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "move_humans/types.h"
 
@@ -12,7 +13,7 @@ class PlannerInterface {
 public:
   virtual ~PlannerInterface() {}
 
-  virtual void initialize(std::string name, tf::TransformListener *tf,
+  virtual void initialize(std::string name, tf2_ros::Buffer *tf2,
                           costmap_2d::Costmap2DROS *costmap_ros) = 0;
 
   virtual bool makePlans(const move_humans::map_pose &starts,
