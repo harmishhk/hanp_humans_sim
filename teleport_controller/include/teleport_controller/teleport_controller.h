@@ -30,6 +30,15 @@ public:
                 const move_humans::map_trajectory &trajectories,
                 const move_humans::map_twist &vels);
 
+  int getLatestCommonTime(const std::string &source_frame, const std::string &target_frame, ros::Time& time, std::string* error_string) const;
+  void lookupTwist(const std::string& tracking_frame, const std::string& observation_frame,
+                                const ros::Time& time, const ros::Duration& averaging_interval,
+                                geometry_msgs::Twist& twist) const;
+  void lookupTwist(const std::string& tracking_frame, const std::string& observation_frame, const std::string& reference_frame,
+                   const tf2::Vector3 & reference_point, const std::string& reference_point_frame,
+                   const ros::Time& time, const ros::Duration& averaging_interval,
+                   geometry_msgs::Twist& twist) const;
+
   bool computeHumansStates(move_humans::map_traj_point &humans);
 
   bool areGoalsReached(move_humans::id_vector &reached_humans);

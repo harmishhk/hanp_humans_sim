@@ -19,7 +19,7 @@ PLUGINLIB_EXPORT_CLASS(multigoal_planner::MultiGoalPlanner,
 
 namespace multigoal_planner {
 MultiGoalPlanner::MultiGoalPlanner()
-    : tf_(NULL), costmap_ros_(NULL), initialized_(false), allow_unknown_(true) {
+    : tf2_(NULL), costmap_ros_(NULL), initialized_(false), allow_unknown_(true) {
 }
 
 MultiGoalPlanner::MultiGoalPlanner(std::string name, tf2_ros::Buffer *tf2,
