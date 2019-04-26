@@ -519,7 +519,7 @@ bool TeleportController::transformPlansAndTrajs(
         geometry_msgs::TransformStamped plan_to_controller_transform_msg;
 
         plan_to_controller_transform_msg = tf2_->lookupTransform(controller_frame_, plan[0].header.frame_id,
-                                                                      ros::Time(0), ros::Duration(0.5));
+                                                                      ros::Time(0));
         tf2::Stamped<tf2::Transform> plan_to_controller_transform;
         tf2::fromMsg(plan_to_controller_transform_msg,plan_to_controller_transform);
 
@@ -616,7 +616,7 @@ bool TeleportController::transformPlansAndTrajs(
         geometry_msgs::TransformStamped traj_to_controller_transform_msg;
 
         traj_to_controller_transform_msg = tf2_->lookupTransform(controller_frame_, traj.header.frame_id,
-                                                                      ros::Time(0), ros::Duration(0.5));
+                                                                      ros::Time(0));
         tf2::Stamped<tf2::Transform> traj_to_controller_transform;
         tf2::fromMsg(traj_to_controller_transform_msg,traj_to_controller_transform);
 

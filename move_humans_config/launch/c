@@ -1,0 +1,55 @@
+... logging to /home/ptsingaman/.ros/log/515f2f7e-6812-11e9-bcb1-54bf648dcde8/roslaunch-happy-9072.log
+Checking log directory for disk usage. This may take awhile.
+Press Ctrl-C to interrupt
+Done checking log file disk usage. Usage is <1GB.
+]2;/home/ptsingaman/Navigation_planner_melodic/src/hanp_humans_sim/move_humans_config/launch/move_humans.launch
+[1mstarted roslaunch server http://happy:36105/[0m
+
+SUMMARY
+========
+
+PARAMETERS
+ * /move_humans_node/MultiGoalPlanner/visualize_paths_poses: True
+ * /move_humans_node/TeleportController/human_radius: 0.35
+ * /move_humans_node/TeleportController/max_angular_vel: 1.1
+ * /move_humans_node/TeleportController/max_linear_vel: 0.6
+ * /move_humans_node/TeleportController/publish_human_markers: True
+ * /move_humans_node/controller: teleport_controll...
+ * /move_humans_node/controller_costmap/footprint: [[-0.1, -0.1], [-...
+ * /move_humans_node/controller_costmap/global_frame: map
+ * /move_humans_node/controller_costmap/origin_x: -100.0
+ * /move_humans_node/controller_costmap/origin_y: -100.0
+ * /move_humans_node/controller_costmap/publish_frequency: 0.1
+ * /move_humans_node/controller_costmap/resolution: 0.025
+ * /move_humans_node/controller_costmap/robot_base_frame: humans_frame
+ * /move_humans_node/controller_costmap/rolling_window: False
+ * /move_humans_node/controller_costmap/update_frequency: 1.0
+ * /move_humans_node/controller_frequency: 10.0
+ * /move_humans_node/humans: [{'start': [7.0, ...
+ * /move_humans_node/planner: multigoal_planner...
+ * /move_humans_node/planner_costmap/footprint: [[-0.1, -0.1], [-...
+ * /move_humans_node/planner_costmap/global_frame: map
+ * /move_humans_node/planner_costmap/origin_x: -100.0
+ * /move_humans_node/planner_costmap/origin_y: -100.0
+ * /move_humans_node/planner_costmap/plugins: [{'type': 'costma...
+ * /move_humans_node/planner_costmap/publish_frequency: 0.1
+ * /move_humans_node/planner_costmap/robot_base_frame: humans_frame
+ * /move_humans_node/planner_costmap/rolling_window: False
+ * /move_humans_node/planner_costmap/update_frequency: 1.0
+ * /move_humans_node/planner_frequency: 0.0
+ * /move_humans_node/publish_feedback: True
+ * /rosdistro: melodic
+ * /rosversion: 1.14.3
+
+NODES
+  /
+    map_humans_link (tf2/static_transform_publisher)
+    move_humans_node (move_humans/move_humans)
+
+[1mROS_MASTER_URI=http://localhost:11311[0m
+]2;/home/ptsingaman/Navigation_planner_melodic/src/hanp_humans_sim/move_humans_config/launch/move_humans.launch http://localhost:11311
+[1mprocess[move_humans_node-2]: started with pid [9089][0m
+[move_humans_node-2] killing on exit
+shutting down processing monitor...
+... shutting down processing monitor complete
+[1mdone[0m
