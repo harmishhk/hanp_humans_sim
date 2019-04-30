@@ -27,6 +27,7 @@ void TeleportController::initialize(std::string name, tf2_ros::Buffer *tf2,
   if (!isInitialized()) {
     ros::NodeHandle private_nh("~/" + name);
     tf2_ = tf2;
+    tf2_ros::TransformListener tfListener(*tf2);
     costmap_ros_ = costmap_ros;
     controller_frame_ = costmap_ros_->getGlobalFrameID();
     if (controller_frame_.compare("") == 0) {
@@ -517,7 +518,8 @@ bool TeleportController::transformPlansAndTrajs(
                controller_frame_.c_str());
       try {
         geometry_msgs::TransformStamped plan_to_controller_transform_msg;
-
+	tf2_->canTransform(controller_frame_, plan[0].header.frame_id,
+                              ros::Time(0), ros::Duration(0.5));
         plan_to_controller_transform_msg = tf2_->lookupTransform(controller_frame_, plan[0].header.frame_id,
                                                                       ros::Time(0));
         tf2::Stamped<tf2::Transform> plan_to_controller_transform;
@@ -614,7 +616,8 @@ bool TeleportController::transformPlansAndTrajs(
     if (traj.header.frame_id != controller_frame_) {
       try {
         geometry_msgs::TransformStamped traj_to_controller_transform_msg;
-
+	tf2_->canTransform(controller_frame_, traj.header.frame_id,
+                              ros::Time(0), ros::Duration(0.5));
         traj_to_controller_transform_msg = tf2_->lookupTransform(controller_frame_, traj.header.frame_id,
                                                                       ros::Time(0));
         tf2::Stamped<tf2::Transform> traj_to_controller_transform;

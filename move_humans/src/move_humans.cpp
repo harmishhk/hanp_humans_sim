@@ -38,7 +38,8 @@ MoveHumans::MoveHumans(tf2_ros::Buffer &tf2)
       publish_feedback_(false), p_freq_change_(false), c_freq_change_(false),
       use_external_trajs_(false), new_external_controller_trajs_(false){
   ros::NodeHandle private_nh("~");
-
+  //tf2_lisn(tf2_);
+  tf2_ros::TransformListener tf2_lisn(tf2_);
   mhas_ = new MoveHumansActionServer(
       private_nh, "action_server", boost::bind(&MoveHumans::actionCB, this, _1),
       false);

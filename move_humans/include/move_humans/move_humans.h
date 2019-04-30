@@ -39,7 +39,6 @@ public:
 private:
   // tf::TransformListener &tf_;
   tf2_ros::Buffer &tf2_;
-  // tf2_ros::TransformListener &tf2_;
 
   MoveHumansActionServer *mhas_;
   void actionCB(const move_humans::MoveHumansGoalConstPtr &move_humans_goal);

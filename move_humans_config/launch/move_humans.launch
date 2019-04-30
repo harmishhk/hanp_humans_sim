@@ -3,7 +3,7 @@
   <!--<node name="map_server" pkg="map_server" type="map_server" args="$(find move_humans_config)/maps/laas_adream.yaml"/>-->
 
   <!-- transform between humans_frame and map -->
-  <node pkg="tf2" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
+  <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
 
   <!-- start move_humans node with multigoal_planner and teleport_controller -->
   <node name="move_humans_node" pkg="move_humans" type="move_humans" output="screen" required="true">

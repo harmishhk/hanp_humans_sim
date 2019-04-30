@@ -16,6 +16,7 @@ int main(int argc, char **argv) {
   // starting the move_humans client
   move_humans::MoveHumansClient move_humans_client(tf2);
 
+  tf2.setUsingDedicatedThread(true);
   // start spinning
   ros::spin();
 
