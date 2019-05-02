@@ -1,3 +1,0 @@
-<launch>
-  <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
-</launch>

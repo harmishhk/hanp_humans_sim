@@ -34,7 +34,7 @@ void MultiGoalPlanner::initialize(std::string name, tf2_ros::Buffer *tf2,
                                   costmap_2d::Costmap2DROS *costmap_ros) {
   if (!initialized_) {
     tf2_ = tf2;
-    tf2_ros::TransformListener tfListener(*tf2_);
+    tf2_ros::TransformListener tf2_lisn(*tf2_);
     costmap_ros_ = costmap_ros;
 
     costmap_ = costmap_ros_->getCostmap();

@@ -99,6 +99,7 @@ MoveHumans::MoveHumans(tf2_ros::Buffer &tf2)
                   controller_costmap_ros_)) {
     exit(1);
   }
+  ROS_INFO("Costmap loaded MoveHumans");
   planner_costmap_ros_->start();
   controller_costmap_ros_->start();
 
@@ -893,9 +894,9 @@ MoveHumans::toGlobaolFrame(const move_humans::map_pose &pose_map) {
   std::string global_frame = planner_costmap_ros_->getGlobalFrameID();
 
   for (auto &pose_kv : pose_map) {
-    tf::Stamped<tf::Pose> tf_pose;
+    tf2::Stamped<tf2::Transform> tf_pose;
     std::string human_frame = pose_kv.second.header.frame_id;
-    poseStampedMsgToTF(pose_kv.second, tf_pose);
+    tf2::fromMsg(pose_kv.second, tf_pose);
 
     geometry_msgs::TransformStamped global_pose_transform;
     tf_pose.stamp_ = ros::Time();
@@ -903,15 +904,16 @@ MoveHumans::toGlobaolFrame(const move_humans::map_pose &pose_map) {
       // tf2_.transformPose(global_frame, tf_pose, global_tf_pose);
       global_pose_transform = tf2_.lookupTransform(global_frame,human_frame,ros::Time(0));
 
-    } catch (tf::TransformException &ex) {
+    } catch (tf2::TransformException &ex) {
       ROS_WARN("Failed to transform pose from %s into the %s frame: %s",
                tf_pose.frame_id_.c_str(), global_frame.c_str(), ex.what());
+      ROS_INFO("Here");
       // global_tf_pose = tf_pose;
     }
 
 
     geometry_msgs::PoseStamped global_pose,tf_pose_msg;
-    tf::poseStampedTFToMsg(tf_pose, tf_pose_msg);
+    tf_pose_msg = tf2::toMsg(tf_pose, tf_pose_msg);
     tf2::doTransform(tf_pose_msg,global_pose,global_pose_transform);
     // tf::poseStampedTFToMsg(tf_pose_msg, global_pose);
     global_pose_map[pose_kv.first] = global_pose;
@@ -926,23 +928,23 @@ move_humans::map_pose_vector MoveHumans::toGlobaolFrame(
   for (auto &pose_vector_kv : pose_vector_map) {
     move_humans::pose_vector global_pose_vector;
     for (auto &pose : pose_vector_kv.second) {
-      tf::Stamped<tf::Pose> tf_pose, global_tf_pose;
+      tf2::Stamped<tf2::Transform> tf_pose, global_tf_pose;
       std::string human_frame = pose.header.frame_id;
-      poseStampedMsgToTF(pose, tf_pose);
+      tf2::fromMsg(pose, tf_pose);
 
       geometry_msgs::TransformStamped global_pose_transform;
       tf_pose.stamp_ = ros::Time();
       try {
         // tf2_.transformPose(global_frame, tf_pose, global_tf_pose);
         global_pose_transform = tf2_.lookupTransform(global_frame,human_frame,ros::Time(0));
-      } catch (tf::TransformException &ex) {
+      } catch (tf2::TransformException &ex) {
         ROS_WARN("Failed to transform pose from %s into the %s frame: %s",
                  tf_pose.frame_id_.c_str(), global_frame.c_str(), ex.what());
         // global_tf_pose = tf_pose;
       }
 
       geometry_msgs::PoseStamped global_pose,tf_pose_msg;
-      tf::poseStampedTFToMsg(tf_pose, tf_pose_msg);
+      tf_pose_msg = tf2::toMsg(tf_pose, tf_pose_msg);
       tf2::doTransform(tf_pose_msg,global_pose,global_pose_transform);
       //
       // geometry_msgs::PoseStamped global_pose;
@@ -998,7 +1000,7 @@ void MoveHumans::controllerTwistsCB(
 void MoveHumans::RobotPosCB(
     hanp_msgs::Trajectory trajectory) {
 	robot_pos = trajectory.points[0];
-	// ROS_INFO("Start X: %f, Start Y: %f", robot_pos.transform.translation.x, robot_pos.transform.translation.y);
+	ROS_INFO("Start X: %f, Start Y: %f", robot_pos.transform.translation.x, robot_pos.transform.translation.y);
 	auto xpos = robot_pos.transform.translation.x;
 	auto ypos = robot_pos.transform.translation.y;
 }

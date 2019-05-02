@@ -9,14 +9,13 @@ int main(int argc, char **argv) {
 
   // tf::TransformListener tf(ros::Duration(10));
   tf2_ros::Buffer tf2(ros::Duration(10));
-
+  tf2.setUsingDedicatedThread(true);
   // starting the move_humans server
   move_humans::MoveHumans move_humans(tf2);
 
   // starting the move_humans client
   move_humans::MoveHumansClient move_humans_client(tf2);
 
-  tf2.setUsingDedicatedThread(true);
   // start spinning
   ros::spin();
 
