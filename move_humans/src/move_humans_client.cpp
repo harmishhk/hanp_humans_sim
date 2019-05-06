@@ -392,6 +392,7 @@ bool MoveHumansClient::updateGoal(move_humans::HumanUpdate::Request &req,
     message += "Updated goal pose for human " +
                std::to_string(req.human_pose.human_id);
     ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
+    //ROS_INFO_NAMED(NODE_NAME, "%s", std::to_string(req.human_pose.pose)); 
     res.message = message;
     res.success = true;
   } else {

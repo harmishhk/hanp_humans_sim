@@ -16,7 +16,8 @@ public:
 
   virtual bool setPlans(const move_humans::map_pose_vector &plans) = 0;
   virtual bool setPlans(const move_humans::map_pose_vector &plans,
-                        const move_humans::map_trajectory &trajectories) = 0;
+                        const move_humans::map_trajectory &trajectories,
+                        const move_humans::map_twist &vels) = 0;
 
   virtual bool computeHumansStates(move_humans::map_traj_point &humans) = 0;
 

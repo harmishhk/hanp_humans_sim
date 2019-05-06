@@ -5,7 +5,7 @@ function init() {
     "map",
     0.7,
     "/move_humans_node/TeleportController/plans",
-    "/move_humans_node/TeleportController/human_markers",
+    "/move_humans_node/human_markers",
     "/move_humans_node/reset_simulation",
     "/move_humans_node/add_human",
     "/move_humans_node/delete_human",
@@ -77,7 +77,7 @@ class MoveHumansViz {
     });
 
     // setup human paths clients
-    let humanPaths = new ROS3DNAV.PathArray({
+    let humanPaths = new ROS3DNAV.HumanPathArray({
       ros: this.ros,
       topic: humanPathsTopic,
       tfClient: this.tfClient,
@@ -236,7 +236,7 @@ class MoveHumansViz {
       pose: new GeometryMsgs.PoseStamped({
         header: new StdMsgs.Header({
           seq: 1,
-          stamp: new ROS3DNAV.Time().now(),
+          stamp: ROS3DNAV.Time.now(),
           frame_id: this.fixedFrame,
         }),
         pose: new GeometryMsgs.Pose({
