@@ -6,10 +6,11 @@ int main(int argc, char **argv) {
 
   // starting the move_humans node
   ros::init(argc, argv, "move_humans_node");
+  // ros::Time::init();
 
   // tf::TransformListener tf(ros::Duration(10));
-  tf2_ros::Buffer tf2(ros::Duration(10));
-  tf2.setUsingDedicatedThread(true);
+  tf2_ros::Buffer tf2(ros::Duration(10),true);
+  // tf2.setUsingDedicatedThread(true);
   // starting the move_humans server
   move_humans::MoveHumans move_humans(tf2);
 

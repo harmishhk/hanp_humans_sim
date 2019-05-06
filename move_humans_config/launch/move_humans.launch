@@ -1,9 +1,11 @@
 <launch>
   <!-- start map_server with a map -->
   <!--<node name="map_server" pkg="map_server" type="map_server" args="$(find move_humans_config)/maps/laas_adream.yaml"/>-->
-
+<!-- <param name="use_sim_time" type="bool" value="true"/> -->
   <!-- transform between humans_frame and map -->
-  <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" />
+  <node pkg="tf" type="static_transform_publisher" name="map_humans_link" args="0 0 0 0 0 0 map humans_frame 20" >
+  <param name="use_sim_time" type="bool" value="true"/>
+  </node>
 
   <!-- start move_humans node with multigoal_planner and teleport_controller -->
   <node name="move_humans_node" pkg="move_humans" type="move_humans" output="screen" required="true">
@@ -21,6 +23,8 @@
     <param name="planner" value="multigoal_planner/MultiGoalPlanner"/>
     <rosparam file="$(find move_humans_config)/config/teleport_controller_params.yaml" command="load" ns="/move_humans_node/TeleportController"/>
     <param name="controller" value="teleport_controller/TeleportController"/>
+    <param name="use_sim_time" type="bool" value="true"/>
+    <remap from="/move_humans_node/MultiGoalPlanner/robot_position" to="/move_base_node/TebLocalPlannerROS/Robot_Pose"/>
   </node>
 
   <!-- launch rviz if asked -->

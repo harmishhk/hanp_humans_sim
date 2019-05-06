@@ -5,6 +5,7 @@
 #define PLANS_PUB_TOPIC "plans"
 #define PLANS_POSES_PUB_TOPIC "plans_poses"
 #define POTENTIAL_PUB_TOPIC "potential"
+#define ROBOT_POS_SUB_TOPIC "robot_position"
 
 #include <multigoal_planner/multigoal_planner.h>
 #include <pluginlib/class_list_macros.h>
@@ -71,6 +72,8 @@ void MultiGoalPlanner::initialize(std::string name, tf2_ros::Buffer *tf2,
         PLANS_POSES_PUB_TOPIC, 1);
     potential_pub_ =
         private_nh.advertise<nav_msgs::OccupancyGrid>(POTENTIAL_PUB_TOPIC, 1);
+    robot_pos_sub_ = private_nh.subscribe(
+      ROBOT_POS_SUB_TOPIC, 1, &MultiGoalPlanner::RobotPosCB, this);
 
     dsrv_ = new dynamic_reconfigure::Server<MultiGoalPlannerConfig>(private_nh);
     dynamic_reconfigure::Server<MultiGoalPlannerConfig>::CallbackType cb =
@@ -99,6 +102,36 @@ void MultiGoalPlanner::reconfigureCB(MultiGoalPlannerConfig &config,
   last_config_ = config;
 }
 
+void MultiGoalPlanner::RobotPosCB(geometry_msgs::Pose robot_pos) {
+
+  auto xpos = robot_pos.position.x;
+  auto ypos = robot_pos.position.y;
+  auto robot_radius = 0.300;
+  
+
+  geometry_msgs::Point v1,v2,v3,v4;
+  v1.x = xpos-robot_radius,v1.y=ypos-robot_radius,v1.z=0.0;
+  v2.x = xpos-robot_radius,v2.y=ypos+robot_radius,v2.z=0.0;
+  v3.x = xpos+robot_radius,v3.y=ypos+robot_radius,v3.z=0.0;
+  v4.x = xpos+robot_radius,v4.y=ypos-robot_radius,v4.z=0.0;
+
+
+  std::vector<geometry_msgs::Point> robot_pos_costmap;
+  robot_pos_costmap.push_back(v1);
+  robot_pos_costmap.push_back(v2);
+  robot_pos_costmap.push_back(v3);
+  robot_pos_costmap.push_back(v4);
+  
+  if(!robot_prev_pos_costmap.empty()){
+    costmap_->setConvexPolygonCost(robot_prev_pos_costmap, 0.0);
+  }
+  robot_prev_pos_costmap = robot_pos_costmap;
+
+  bool set_success = false;
+  set_success = costmap_->setConvexPolygonCost(robot_pos_costmap, 1.0);
+  // ROS_INFO("Success :robot_pos_costmap %d",set_success);
+}
+
 bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
                                  const move_humans::map_pose &goals,
                                  move_humans::map_pose_vectors &plans) {
@@ -119,7 +152,8 @@ bool MultiGoalPlanner::makePlans(const move_humans::map_pose &starts,
   }
 
   if (starts.size() != goals.size()) {
-    ROS_ERROR_NAMED(NODE_NAME,
+
+      	  ROS_ERROR_NAMED(NODE_NAME,
                     "Size of start and goal points must be the same");
     return false;
   }

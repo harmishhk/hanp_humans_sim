@@ -42,14 +42,17 @@ private:
   tf2_ros::Buffer *tf2_;
   costmap_2d::Costmap2DROS *costmap_ros_;
   costmap_2d::Costmap2D *costmap_;
+  std::vector<geometry_msgs::Point> robot_prev_pos_costmap;
 
+  // geometry_msgs::Pose robot_pos;
   ros::Publisher plans_pub_, plans_poses_pub_, potential_pub_;
+  ros::Subscriber robot_pos_sub_;
   void publishPlans(move_humans::map_pose_vector &plans);
 
   dynamic_reconfigure::Server<MultiGoalPlannerConfig> *dsrv_;
   multigoal_planner::MultiGoalPlannerConfig default_config_, last_config_;
   void reconfigureCB(MultiGoalPlannerConfig &config, uint32_t level);
-
+  void RobotPosCB(geometry_msgs::Pose robot_pos);
   boost::mutex configuration_mutex_;
   bool initialized_, setup_, allow_unknown_;
   double default_tolerance_;

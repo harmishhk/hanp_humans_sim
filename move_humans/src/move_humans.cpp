@@ -124,6 +124,10 @@ MoveHumans::MoveHumans(tf2_ros::Buffer &tf2)
   state_ = move_humans::MoveHumansState::IDLE;
 
   clear_human_markers_ = false;
+  ROS_INFO_NAMED(NODE_NAME,"Global frame: %s",planner_costmap_ros_->getGlobalFrameID().c_str());
+  ROS_INFO_NAMED(NODE_NAME,"Base frame: %s",planner_costmap_ros_->getBaseFrameID().c_str());
+  geometry_msgs::PoseStamped new_pose;
+  ROS_INFO("Pose stamp: %.4f",ros::Time());
   // robot_pos = NULL;
 }
 
@@ -156,6 +160,7 @@ MoveHumans::~MoveHumans() {
 
   planner_.reset();
   controller_.reset();
+
 }
 
 void MoveHumans::reconfigureCB(move_humans::MoveHumansConfig &config,
@@ -973,6 +978,7 @@ bool MoveHumans::followExternalPaths(std_srvs::SetBool::Request &req,
   res.message = message;
   use_external_trajs_ = req.data;
   if (!use_external_trajs_) {
+    ROS_INFO_NAMED(NODE_NAME, "%d",2);
     boost::mutex::scoped_lock(external_trajs_mutex_);
     external_controller_trajs_ = NULL;
   }
@@ -1107,6 +1113,9 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
 
 void MoveHumans::publishCallback(const ros::TimerEvent &timer_event) {
   move_humans::map_traj_point empty;
+  // geometry_msgs::PoseStamped new_pose;
+  // ROS_INFO("Ros Time stamp: %.4f",ros::Time().toSec());
+  // ROS_INFO("Ros Time now stamp: %.4f",ros::Time::now().toSec());
   publishHumans(empty);
 }
 };
