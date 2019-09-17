@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/ptsingaman/Navigation_planner_melodic/src/hanp_humans_sim/move_humans/cmake-build-debug/devel/setup.sh

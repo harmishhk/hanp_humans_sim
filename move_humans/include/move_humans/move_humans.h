@@ -93,6 +93,7 @@ private:
 
   double planner_frequency_, controller_frequency_, publish_frequency_;
   bool p_freq_change_, c_freq_change_;
+  bool teleported;
 
   bool run_planner_;
   boost::mutex planner_mutex_, external_trajs_mutex_, external_vels_mutex_;

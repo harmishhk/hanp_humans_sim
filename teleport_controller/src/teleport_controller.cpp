@@ -159,6 +159,7 @@ bool TeleportController::computeHumansStates(
   // get a copy of transformed plans, will transform if plans are new
   move_humans::map_trajectory transformed_trajs;
   if (!transformPlansAndTrajs(plans_, trajs_, transformed_trajs)) {
+    std::cout << "Plans: "<<plans_.size() << "Trajs: " << trajs_.size() << '\n';
     ROS_ERROR_NAMED(NODE_NAME, "Cannot transform plans to controller frame");
     return false;
   }
@@ -259,6 +260,7 @@ bool TeleportController::computeHumansStates(
       reached_goals_.push_back(human_id);
       last_traj_point.transform = transformed_traj.points.back().transform;
       last_traj_point.velocity.linear.x = 0.0;
+      last_traj_point.velocity.linear.y = 0.0;
       last_traj_point.velocity.angular.z = 0.0;
       last_traj_point.time_from_start.fromSec(-1.0);
       last_traj_points_[human_id] = last_traj_point;
@@ -310,9 +312,13 @@ bool TeleportController::computeHumansStates(
         last_point.velocity.linear.x +=
             (next_point.velocity.linear.x - last_point.velocity.linear.x) *
             time_ratio;
+        last_point.velocity.linear.y +=
+            (next_point.velocity.linear.y - last_point.velocity.linear.y) *
+            time_ratio;
         last_point.velocity.angular.z +=
             (next_point.velocity.angular.z - last_point.velocity.angular.z) *
             time_ratio;
+        // std::cout << "I am at the eps if" << '\n';
         last_point.time_from_start.fromSec(
             last_point.time_from_start.toSec() +
             (next_point.time_from_start.toSec() -
@@ -354,10 +360,8 @@ bool TeleportController::computeHumansStates(
         //     (angular_dist * ratio_ang_dist));
       } else {
         // assuming maximum velocities
-        linear_dist = std::hypot(next_point.transform.translation.x -
-                                     last_point.transform.translation.x,
-                                 next_point.transform.translation.y -
-                                     last_point.transform.translation.y);
+        linear_dist = std::hypot(next_point.transform.translation.x - last_point.transform.translation.x,
+                                 next_point.transform.translation.y - last_point.transform.translation.y);
         double can_lin_dist = last_config_.max_linear_vel * ep_time;
         double ratio_lin_dist = std::min(can_lin_dist / linear_dist, 1.0);
         last_point.transform.translation.x +=
@@ -386,11 +390,13 @@ bool TeleportController::computeHumansStates(
                                      last_traj_point.transform.translation.x,
                                  last_point.transform.translation.y -
                                      last_traj_point.transform.translation.y);
-        last_point.velocity.linear.x = linear_dist / cycle_time;
+        // last_point.velocity.linear.x = linear_dist / cycle_time;
+        last_point.velocity.linear.x = (last_point.transform.translation.x - last_traj_point.transform.translation.x)/cycle_time;
+        last_point.velocity.linear.y = (last_point.transform.translation.y - last_traj_point.transform.translation.y)/cycle_time;
         angular_dist = tf::getYaw(last_point.transform.rotation) -
                        tf::getYaw(last_traj_point.transform.rotation);
         last_point.velocity.angular.z = angular_dist / cycle_time;
-
+        // std::cout << "I am in the else" << '\n';
         last_point.time_from_start.fromSec(-1.0);
       }
     }
@@ -444,7 +450,6 @@ bool TeleportController::computeHumansStates(
   }
 
   humans = last_traj_points_;
-
   for (auto &human_id : reached_goals_) {
     last_traj_points_.erase(human_id);
     transformed_trajs.erase(human_id);
@@ -506,6 +511,7 @@ bool TeleportController::transformPlansAndTrajs(
 
     auto transformed_traj_it = last_transformed_trajs_.find(human_id);
     if (transformed_traj_it != last_transformed_trajs_.end()) {
+      // std::cout << "giving hldajhldhld" << '\n';
       transformed_trajs[human_id] = transformed_traj_it->second;
       ROS_DEBUG_NAMED(
           NODE_NAME,
@@ -515,6 +521,7 @@ bool TeleportController::transformPlansAndTrajs(
     }
 
     if (plan[0].header.frame_id != controller_frame_) {
+      // std::cout << "planning here" << '\n';
       ROS_INFO("plan %s controller %s", plan[0].header.frame_id.c_str(),
                controller_frame_.c_str());
       try {
@@ -577,8 +584,9 @@ bool TeleportController::transformPlansAndTrajs(
                      human_id);
     }
   }
-
+  // std::cout << "I am outside loop" << '\n';
   for (auto &traj_kv : trajs) {
+    // std::cout << "I am in trajKv" << '\n';
     auto &human_id = traj_kv.first;
     auto &traj = traj_kv.second;
 
@@ -682,7 +690,9 @@ bool TeleportController::transformPlansAndTrajs(
                      human_id);
     }
   }
-
+  if(plans.size() >0 && trajs.size() >0){
+    return true;
+  }
   return (plans.size() + trajs.size() == transformed_trajs.size() + skipped);
 }
 
