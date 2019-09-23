@@ -220,7 +220,7 @@ bool TeleportController::computeHumansStates(
     // get references to adjusted last pose and twist
     auto last_point = last_traj_point;
     double last_time = last_point.time_from_start.toSec();
-    double linear_dist, linear_time, angular_dist, angular_time, step_time,
+    double linear_dist,linear_dist_x,linear_dist_y, linear_time, linear_time_x, linear_time_y, angular_dist, angular_time, step_time,
         total_time = 0.0, acc_time = 0.0, last_total_time = 0.0;
     double start_point_time = last_time < 0.0 ? 0.0 : last_time;
     while (next_point_index < transformed_traj.points.size()) {
@@ -231,16 +231,22 @@ bool TeleportController::computeHumansStates(
                                      last_point.transform.translation.x,
                                  next_point.transform.translation.y -
                                      last_point.transform.translation.y);
+        linear_dist_x = std::abs(next_point.transform.translation.x - last_point.transform.translation.x);
+        linear_dist_y = std::abs(next_point.transform.translation.y - last_point.transform.translation.y);
+        std::cout << "linear_dist_x" << linear_dist_x <<"linear_dist_y"<< linear_dist_y<<'\n';
         if (linear_dist < POINT_JUMP_EPS) {
           next_point_index++;
           continue;
         }
         linear_time = linear_dist / last_config_.max_linear_vel;
+        linear_time_x = linear_dist_x / last_config_.max_x_vel;
+        linear_time_y = linear_dist_y / last_config_.max_y_vel;
         angular_dist = std::abs(angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation)));
         angular_time = angular_dist / last_config_.max_angular_vel;
         // angular_time = 0.0;
+        linear_time = std::max(linear_time_x, linear_time_y);
         step_time = std::max(linear_time, angular_time);
         acc_time += step_time;
         total_time += step_time;
@@ -362,17 +368,29 @@ bool TeleportController::computeHumansStates(
         // assuming maximum velocities
         linear_dist = std::hypot(next_point.transform.translation.x - last_point.transform.translation.x,
                                  next_point.transform.translation.y - last_point.transform.translation.y);
+        
+        linear_dist_x = std::abs(next_point.transform.translation.x - last_point.transform.translation.x);
+        linear_dist_y = std::abs(next_point.transform.translation.y - last_point.transform.translation.y);
+
         double can_lin_dist = last_config_.max_linear_vel * ep_time;
+        double can_lin_dist_x = last_config_.max_x_vel * ep_time;
+        double can_lin_dist_y = last_config_.max_y_vel * ep_time;
+
         double ratio_lin_dist = std::min(can_lin_dist / linear_dist, 1.0);
+        double ratio_lin_dist_x = std::min(can_lin_dist_x / linear_dist_x, 1.0);
+        double ratio_lin_dist_y = std::min(can_lin_dist_y / linear_dist_y, 1.0);
+
         last_point.transform.translation.x +=
             (next_point.transform.translation.x -
              last_point.transform.translation.x) *
-            ratio_lin_dist;
+            ratio_lin_dist_x;
         last_point.transform.translation.y +=
             (next_point.transform.translation.y -
              last_point.transform.translation.y) *
-            ratio_lin_dist;
-
+            ratio_lin_dist_y;
+            
+        std::cout << "last_point.transform.translation.x" << last_point.transform.translation.x << "last_point.transform.translation.y" << last_point.transform.translation.y << '\n';
+        
         angular_dist = angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation));
@@ -418,6 +436,7 @@ bool TeleportController::computeHumansStates(
 
   // velocity control mode
   for (auto &vel_kv : vels_) {
+    std::cout << "Vel control mode" << std::endl;
     auto last_traj_points_it = last_traj_points_.find(vel_kv.first);
     auto &vel = vel_kv.second;
     if (last_traj_points_it != last_traj_points_.end()) {

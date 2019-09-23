@@ -1062,10 +1062,8 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
   for (auto &human_pt_kv : last_published_humans_) {
     hanp_msgs::TrackedSegment human_segment;
     human_segment.type = DEFAUTL_SEGMENT_TYPE;
-    human_segment.pose.pose.position.x =
-        human_pt_kv.second.transform.translation.x;
-    human_segment.pose.pose.position.y =
-        human_pt_kv.second.transform.translation.y;
+    human_segment.pose.pose.position.x = human_pt_kv.second.transform.translation.x;
+    human_segment.pose.pose.position.y = human_pt_kv.second.transform.translation.y;
     human_segment.pose.pose.orientation = human_pt_kv.second.transform.rotation;
     human_segment.pose.covariance[0] = human_radius_;
     human_segment.pose.covariance[7] = human_radius_;
