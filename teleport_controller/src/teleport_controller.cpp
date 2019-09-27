@@ -159,7 +159,7 @@ bool TeleportController::computeHumansStates(
   // get a copy of transformed plans, will transform if plans are new
   move_humans::map_trajectory transformed_trajs;
   if (!transformPlansAndTrajs(plans_, trajs_, transformed_trajs)) {
-    std::cout << "Plans: "<<plans_.size() << "Trajs: " << trajs_.size() << '\n';
+    // std::cout << "Plans: "<<plans_.size() << "Trajs: " << trajs_.size() << '\n';
     ROS_ERROR_NAMED(NODE_NAME, "Cannot transform plans to controller frame");
     return false;
   }
@@ -233,7 +233,7 @@ bool TeleportController::computeHumansStates(
                                      last_point.transform.translation.y);
         linear_dist_x = std::abs(next_point.transform.translation.x - last_point.transform.translation.x);
         linear_dist_y = std::abs(next_point.transform.translation.y - last_point.transform.translation.y);
-        std::cout << "linear_dist_x" << linear_dist_x <<"linear_dist_y"<< linear_dist_y<<'\n';
+        // std::cout << "linear_dist_x" << linear_dist_x <<"linear_dist_y"<< linear_dist_y<<'\n';
         if (linear_dist < POINT_JUMP_EPS) {
           next_point_index++;
           continue;
@@ -368,7 +368,7 @@ bool TeleportController::computeHumansStates(
         // assuming maximum velocities
         linear_dist = std::hypot(next_point.transform.translation.x - last_point.transform.translation.x,
                                  next_point.transform.translation.y - last_point.transform.translation.y);
-        
+
         linear_dist_x = std::abs(next_point.transform.translation.x - last_point.transform.translation.x);
         linear_dist_y = std::abs(next_point.transform.translation.y - last_point.transform.translation.y);
 
@@ -388,9 +388,9 @@ bool TeleportController::computeHumansStates(
             (next_point.transform.translation.y -
              last_point.transform.translation.y) *
             ratio_lin_dist_y;
-            
-        std::cout << "last_point.transform.translation.x" << last_point.transform.translation.x << "last_point.transform.translation.y" << last_point.transform.translation.y << '\n';
-        
+
+        // std::cout << "last_point.transform.translation.x" << last_point.transform.translation.x << "last_point.transform.translation.y" << last_point.transform.translation.y << '\n';
+
         angular_dist = angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation));
@@ -436,7 +436,7 @@ bool TeleportController::computeHumansStates(
 
   // velocity control mode
   for (auto &vel_kv : vels_) {
-    std::cout << "Vel control mode" << std::endl;
+    // std::cout << "Vel control mode" << std::endl;
     auto last_traj_points_it = last_traj_points_.find(vel_kv.first);
     auto &vel = vel_kv.second;
     if (last_traj_points_it != last_traj_points_.end()) {

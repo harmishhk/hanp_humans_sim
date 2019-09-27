@@ -8,6 +8,7 @@
 #include <global_planner/traceback.h>
 #include <global_planner/orientation_filter.h>
 #include <costmap_2d/costmap_2d.h>
+#include <costmap_2d/costmap_2d_ros.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/transform_listener.h>
 #include <geometry_msgs/PoseArray.h>
