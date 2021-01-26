@@ -8,6 +8,8 @@
 #include <hanp_msgs/HumanPathArray.h>
 #include <boost/thread.hpp>
 #include <move_humans/controller_interface.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <teleport_controller/TeleportControllerConfig.h>
 
@@ -16,16 +18,26 @@ namespace teleport_controller {
 class TeleportController : public move_humans::ControllerInterface {
 public:
   TeleportController();
-  TeleportController(std::string name, tf::TransformListener *tf,
+  TeleportController(std::string name, tf2_ros::Buffer *tf2,
                      costmap_2d::Costmap2DROS *costmap_ros);
   ~TeleportController();
 
-  void initialize(std::string name, tf::TransformListener *tf,
+  void initialize(std::string name, tf2_ros::Buffer *tf2,
                   costmap_2d::Costmap2DROS *costmap_ros);
 
   bool setPlans(const move_humans::map_pose_vector &plans);
   bool setPlans(const move_humans::map_pose_vector &plans,
-                const move_humans::map_trajectory &twists);
+                const move_humans::map_trajectory &trajectories,
+                const move_humans::map_twist &vels);
+
+  int getLatestCommonTime(const std::string &source_frame, const std::string &target_frame, ros::Time& time, std::string* error_string) const;
+  void lookupTwist(const std::string& tracking_frame, const std::string& observation_frame,
+                                const ros::Time& time, const ros::Duration& averaging_interval,
+                                geometry_msgs::Twist& twist) const;
+  void lookupTwist(const std::string& tracking_frame, const std::string& observation_frame, const std::string& reference_frame,
+                   const tf2::Vector3 & reference_point, const std::string& reference_point_frame,
+                   const ros::Time& time, const ros::Duration& averaging_interval,
+                   geometry_msgs::Twist& twist) const;
 
   bool computeHumansStates(move_humans::map_traj_point &humans);
 
@@ -40,12 +52,13 @@ private:
   void reconfigureCB(TeleportControllerConfig &config, uint32_t level);
 
   costmap_2d::Costmap2DROS *costmap_ros_;
-  tf::TransformListener *tf_;
+  tf2_ros::Buffer *tf2_;
 
   ros::Publisher plans_pub_;
 
   move_humans::map_pose_vector plans_;
   move_humans::map_trajectory trajs_;
+  move_humans::map_twist vels_;
   move_humans::map_traj_point last_traj_points_;
   move_humans::map_size last_traversed_indices_;
   move_humans::map_trajectory last_transformed_trajs_;

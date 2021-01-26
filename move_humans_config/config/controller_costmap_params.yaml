@@ -1,11 +1,12 @@
 rolling_window: false
-update_frequency: 1.0
+update_frequency: 10.0
 publish_frequency: 0.1
 # width: 5.0
 # height: 5.0
 resolution: .025
 global_frame: map
 robot_base_frame: humans_frame
+#transform_tolerance: 15
 footprint: [[-0.1, -0.1], [-0.1, 0.1], [0.1, 0.0]]
 origin_x: -100.0
 origin_y: -100.0

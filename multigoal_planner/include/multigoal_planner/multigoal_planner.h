@@ -8,6 +8,9 @@
 #include <global_planner/traceback.h>
 #include <global_planner/orientation_filter.h>
 #include <costmap_2d/costmap_2d.h>
+#include <costmap_2d/costmap_2d_ros.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_listener.h>
 #include <geometry_msgs/PoseArray.h>
 #include <hanp_msgs/HumanPathArray.h>
 #include <boost/thread.hpp>
@@ -20,11 +23,11 @@ namespace multigoal_planner {
 class MultiGoalPlanner : public move_humans::PlannerInterface {
 public:
   MultiGoalPlanner();
-  MultiGoalPlanner(std::string name, tf::TransformListener *tf,
+  MultiGoalPlanner(std::string name, tf2_ros::Buffer *tf2,
                    costmap_2d::Costmap2DROS *costmap_ros);
   ~MultiGoalPlanner();
 
-  void initialize(std::string name, tf::TransformListener *tf,
+  void initialize(std::string name, tf2_ros::Buffer *tf2,
                   costmap_2d::Costmap2DROS *costmap_ros);
 
   bool makePlans(const move_humans::map_pose &starts,
@@ -37,17 +40,20 @@ public:
                  move_humans::map_pose_vectors &plans);
 
 private:
-  tf::TransformListener *tf_;
+  tf2_ros::Buffer *tf2_;
   costmap_2d::Costmap2DROS *costmap_ros_;
   costmap_2d::Costmap2D *costmap_;
+  std::vector<geometry_msgs::Point> robot_prev_pos_costmap;
 
+  // geometry_msgs::Pose robot_pos;
   ros::Publisher plans_pub_, plans_poses_pub_, potential_pub_;
+  ros::Subscriber robot_pos_sub_;
   void publishPlans(move_humans::map_pose_vector &plans);
 
   dynamic_reconfigure::Server<MultiGoalPlannerConfig> *dsrv_;
   multigoal_planner::MultiGoalPlannerConfig default_config_, last_config_;
   void reconfigureCB(MultiGoalPlannerConfig &config, uint32_t level);
-
+  void RobotPosCB(geometry_msgs::Pose robot_pos);
   boost::mutex configuration_mutex_;
   bool initialized_, setup_, allow_unknown_;
   double default_tolerance_;

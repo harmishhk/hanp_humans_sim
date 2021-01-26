@@ -9,6 +9,10 @@
 #include <std_srvs/SetBool.h>
 #include <dynamic_reconfigure/server.h>
 #include <hanp_msgs/HumanTrajectoryArray.h>
+#include <hanp_msgs/HumanTwistArray.h>
+#include <hanp_msgs/TrajectoryPointMsg.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "move_humans/types.h"
 #include "move_humans/planner_interface.h"
@@ -16,6 +20,7 @@
 #include <move_humans/MoveHumansConfig.h>
 #include <move_humans/HumanPose.h>
 #include <move_humans/MoveHumansAction.h>
+
 
 namespace move_humans {
 enum MoveHumansState { PLANNING, CONTROLLING, IDLE };
@@ -25,14 +30,15 @@ typedef actionlib::SimpleActionServer<move_humans::MoveHumansAction>
 
 class MoveHumans {
 public:
-  MoveHumans(tf::TransformListener &tf);
+  MoveHumans(tf2_ros::Buffer &tf2);
   virtual ~MoveHumans();
 
   bool executeCycle(move_humans::map_pose &goals,
                     move_humans::map_pose_vector &global_plans);
 
 private:
-  tf::TransformListener &tf_;
+  // tf::TransformListener &tf_;
+  tf2_ros::Buffer &tf2_;
 
   MoveHumansActionServer *mhas_;
   void actionCB(const move_humans::MoveHumansGoalConstPtr &move_humans_goal);
@@ -47,9 +53,14 @@ private:
   bool clear_human_markers_;
 
   bool use_external_trajs_, new_external_controller_trajs_;
-  ros::Subscriber controller_trajs_sub_;
-  void
-  controllerPathsCB(const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array);
+  ros::Subscriber controller_trajs_sub_, controller_twists_sub_, robot_pos_sub_;
+
+
+  void controllerPathsCB(const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array);
+  void controllerTwistsCB(const hanp_msgs::HumanTwistArrayConstPtr twist_array);
+  void RobotPosCB(hanp_msgs::Trajectory trajectory);
+
+  hanp_msgs::TrajectoryPoint robot_pos;
   hanp_msgs::HumanTrajectoryArrayConstPtr external_controller_trajs_;
 
   ros::ServiceServer follow_external_path_srv_;
@@ -72,17 +83,20 @@ private:
       current_planner_plans_;
   move_humans::map_size cp_indices_;
   move_humans::map_trajectory current_controller_trajectories_;
+  move_humans::map_twist current_controller_vels_;
 
   MoveHumansState state_;
   bool setup_, shutdown_costmaps_, new_global_plans_, reset_controller_plans_,
       publish_feedback_;
-  double human_radius_;
+  double human_radius_, external_vels_timeout_;
+  map_twist_time external_vels_;
 
-  double planner_frequency_, controller_frequency_;
+  double planner_frequency_, controller_frequency_, publish_frequency_;
   bool p_freq_change_, c_freq_change_;
+  bool teleported;
 
   bool run_planner_;
-  boost::mutex planner_mutex_, external_trajs_mutex_;
+  boost::mutex planner_mutex_, external_trajs_mutex_, external_vels_mutex_;
   boost::condition_variable planner_cond_;
   move_humans::map_pose planner_starts_, planner_goals_;
   move_humans::map_pose_vector planner_sub_goals_;
@@ -109,6 +123,10 @@ private:
                      move_humans::map_pose_vector &sub_goals,
                      move_humans::map_pose &goals);
   void publishHumans(const move_humans::map_traj_point &human_pts);
+  move_humans::map_traj_point last_published_humans_;
+
+  ros::Timer publish_timer_;
+  void publishCallback(const ros::TimerEvent &timer_event);
 };
 }; // namespace move_humans
 

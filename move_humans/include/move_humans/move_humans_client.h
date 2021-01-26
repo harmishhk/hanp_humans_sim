@@ -17,11 +17,11 @@ typedef actionlib::SimpleActionClient<move_humans::MoveHumansAction>
 
 class MoveHumansClient {
 public:
-  MoveHumansClient(tf::TransformListener &tf);
+  MoveHumansClient(tf2_ros::Buffer &tf2);
   virtual ~MoveHumansClient();
 
 private:
-  tf::TransformListener &tf_;
+  tf2_ros::Buffer &tf2_;;
 
   MoveHumansActionClient *mhac_;
 

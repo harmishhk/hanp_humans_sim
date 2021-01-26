@@ -2,6 +2,8 @@
 #define CLEARA_COSTMAPS_SERVICE_NAME "clear_costmaps"
 #define FOLLOW_EXTERNAL_PATHS_SERVICE_NAME "follow_external_paths"
 #define CONTROLLER_TRAJS_SUB_TOPIC "external_human_plans"
+#define CONTROLLER_TWISTS_SUB_TOPIC "external_human_vels"
+#define ROBOT_POS_SUB_TOPIC "robot_position"
 #define HUMANS_PUB_TOPIC "humans"
 #define HUMANS_MARKERS_PUB_TOPIC "human_markers"
 #define DEFAUTL_SEGMENT_TYPE hanp_msgs::TrackedSegmentType::TORSO
@@ -11,7 +13,8 @@
 #define HUMAN_COLOR_G 0.5
 #define HUMAN_COLOR_B 0.0
 #define MARKER_LIFETIME 4.0
-#define HUMAN_RADIUS 0.25 // m
+#define HUMAN_RADIUS 0.25         // m
+#define EXTERNAL_VELS_TIMEOUT 1.0 // seconds
 // #define EXTERNAL_PATH_DIST_THRESHOLD 0.2
 
 #include <boost/thread.hpp>
@@ -19,22 +22,24 @@
 #include <hanp_msgs/TrackedHumans.h>
 #include <hanp_msgs/TrackedSegmentType.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <hanp_msgs/TrajectoryPointMsg.h>
 
 #include "move_humans/move_humans.h"
 
 namespace move_humans {
 
-MoveHumans::MoveHumans(tf::TransformListener &tf)
-    : tf_(tf), mhas_(NULL), planner_costmap_ros_(NULL),
+MoveHumans::MoveHumans(tf2_ros::Buffer &tf2)
+    : tf2_(tf2), mhas_(NULL), planner_costmap_ros_(NULL),
       controller_costmap_ros_(NULL),
       planner_loader_("move_humans", "move_humans::PlannerInterface"),
       controller_loader_("move_humans", "move_humans::ControllerInterface"),
       planner_plans_(NULL), latest_plans_(NULL), controller_plans_(NULL),
       run_planner_(false), setup_(false), new_global_plans_(false),
       publish_feedback_(false), p_freq_change_(false), c_freq_change_(false),
-      use_external_trajs_(false), new_external_controller_trajs_(false) {
+      use_external_trajs_(false), new_external_controller_trajs_(false){
   ros::NodeHandle private_nh("~");
-
+  //tf2_lisn(tf2_);
+  tf2_ros::TransformListener tf2_lisn(tf2_);
   mhas_ = new MoveHumansActionServer(
       private_nh, "action_server", boost::bind(&MoveHumans::actionCB, this, _1),
       false);
@@ -46,9 +51,12 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
                    std::string("move_humans/ControllerInterface"));
   private_nh.param("planner_frequency", planner_frequency_, 0.0);
   private_nh.param("controller_frequency", controller_frequency_, 20.0);
+  private_nh.param("publish_frequency", publish_frequency_, 5.0);
   private_nh.param("shutdown_costmaps", shutdown_costmaps_, false);
   private_nh.param("publish_feedback", publish_feedback_, true);
   private_nh.param("human_radius", human_radius_, HUMAN_RADIUS);
+  private_nh.param("external_vels_timeout", external_vels_timeout_,
+                   EXTERNAL_VELS_TIMEOUT);
 
   current_goals_pub_ =
       private_nh.advertise<geometry_msgs::PoseArray>("current_goals", 0);
@@ -59,6 +67,10 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
 
   controller_trajs_sub_ = private_nh.subscribe(
       CONTROLLER_TRAJS_SUB_TOPIC, 1, &MoveHumans::controllerPathsCB, this);
+  controller_twists_sub_ = private_nh.subscribe(
+      CONTROLLER_TWISTS_SUB_TOPIC, 1, &MoveHumans::controllerTwistsCB, this);
+  robot_pos_sub_ = private_nh.subscribe(
+      ROBOT_POS_SUB_TOPIC, 1, &MoveHumans::RobotPosCB, this);
 
   clear_costmaps_srv_ = private_nh.advertiseService(
       CLEARA_COSTMAPS_SERVICE_NAME, &MoveHumans::clearCostmapsService, this);
@@ -66,23 +78,28 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
       private_nh.advertiseService(FOLLOW_EXTERNAL_PATHS_SERVICE_NAME,
                                   &MoveHumans::followExternalPaths, this);
 
+  publish_timer_ = private_nh.createTimer(ros::Duration(1 / publish_frequency_),
+                                          &MoveHumans::publishCallback, this);
+  publish_timer_.stop();
+
   planner_plans_ = new move_humans::map_pose_vectors();
   latest_plans_ = new move_humans::map_pose_vectors();
   controller_plans_ = new move_humans::map_pose_vectors();
 
-  planner_costmap_ros_ = new costmap_2d::Costmap2DROS("planner_costmap", tf_);
+  planner_costmap_ros_ = new costmap_2d::Costmap2DROS("planner_costmap", tf2_);
   planner_costmap_ros_->pause();
   if (!loadPlugin(planner_name, planner_, planner_loader_,
                   planner_costmap_ros_)) {
     exit(1);
   }
   controller_costmap_ros_ =
-      new costmap_2d::Costmap2DROS("controller_costmap", tf_);
+      new costmap_2d::Costmap2DROS("controller_costmap", tf2_);
   controller_costmap_ros_->pause();
   if (!loadPlugin(controller_name, controller_, controller_loader_,
                   controller_costmap_ros_)) {
     exit(1);
   }
+  ROS_INFO("Costmap loaded MoveHumans");
   planner_costmap_ros_->start();
   controller_costmap_ros_->start();
 
@@ -107,6 +124,11 @@ MoveHumans::MoveHumans(tf::TransformListener &tf)
   state_ = move_humans::MoveHumansState::IDLE;
 
   clear_human_markers_ = false;
+  ROS_INFO_NAMED(NODE_NAME,"Global frame: %s",planner_costmap_ros_->getGlobalFrameID().c_str());
+  ROS_INFO_NAMED(NODE_NAME,"Base frame: %s",planner_costmap_ros_->getBaseFrameID().c_str());
+  geometry_msgs::PoseStamped new_pose;
+  ROS_INFO("Pose stamp: %.4f",ros::Time());
+  // robot_pos = NULL;
 }
 
 MoveHumans::~MoveHumans() {
@@ -124,6 +146,10 @@ MoveHumans::~MoveHumans() {
     delete controller_costmap_ros_;
   }
 
+  // if (robot_pos != NULL) {
+  //   delete robot_pos;
+  // }
+
   planner_thread_->interrupt();
   planner_thread_->join();
   delete planner_thread_;
@@ -134,6 +160,7 @@ MoveHumans::~MoveHumans() {
 
   planner_.reset();
   controller_.reset();
+
 }
 
 void MoveHumans::reconfigureCB(move_humans::MoveHumansConfig &config,
@@ -162,6 +189,11 @@ void MoveHumans::reconfigureCB(move_humans::MoveHumansConfig &config,
     c_freq_change_ = true;
   }
 
+  if (publish_frequency_ != config.publish_frequency) {
+    publish_frequency_ = config.publish_frequency;
+    publish_timer_.setPeriod(ros::Duration(1 / publish_frequency_));
+  }
+
   if (config.planner != last_config_.planner) {
     if (!loadPlugin<move_humans::PlannerInterface>(
             config.planner, planner_, planner_loader_, planner_costmap_ros_)) {
@@ -185,6 +217,7 @@ void MoveHumans::reconfigureCB(move_humans::MoveHumansConfig &config,
 }
 
 void MoveHumans::planThread() {
+  // std::cout << "I am in MoveHumans::planThread" << '\n';
   ROS_DEBUG_NAMED(NODE_NAME "_plan_thread", "Starting planner thread");
   ros::NodeHandle nh;
   ros::Timer timer;
@@ -213,9 +246,9 @@ void MoveHumans::planThread() {
                         "Planner costmap NULL, unable to create plan");
       } else {
         bool planning_success = false;
-        if (planner_sub_goals_.size() > 0) {
+        if (planner_sub_goals.size() > 0) {
           planning_success =
-              planner_->makePlans(planner_starts, planner_sub_goals_,
+              planner_->makePlans(planner_starts, planner_sub_goals,
                                   planner_goals, *planner_plans_);
         } else {
           planning_success = planner_->makePlans(planner_starts, planner_goals,
@@ -273,6 +306,7 @@ void MoveHumans::wakePlanner(const ros::TimerEvent &event) {
 
 void MoveHumans::actionCB(
     const move_humans::MoveHumansGoalConstPtr &move_humans_goal) {
+      // std::cout << "I am in MoveHumans::actionCB" << '\n';
   ROS_DEBUG_NAMED(NODE_NAME, "Received new planning request");
   move_humans::map_pose starts, goals;
   move_humans::map_pose_vector sub_goals;
@@ -282,6 +316,23 @@ void MoveHumans::actionCB(
     ROS_DEBUG_NAMED(NODE_NAME, "Aborting on invalid request");
     return;
   }
+  const move_humans::MoveHumansGoal &mh_goal = *move_humans_goal;
+// for (auto &start : mh_goal.start_poses)
+  teleported = false;
+  // for(auto &pose : mh_goal.start_poses){
+  //   if (starts[pose.human_id].pose.position.x == goals[pose.human_id].pose.position.x && starts[pose.human_id].pose.position.y == goals[pose.human_id].pose.position.y )
+  //   {
+  //     // mhas_->setActive(move_humans::MoveHumansResult(),
+  //                       // "Teleported Human success");
+  //                     // ROS_DEBUG_NAMED(NODE_NAME, "Aborting on invalid request");
+  //     ROS_INFO("Teleported Successfully");
+  //     teleported = true;
+  //   }
+  //   else
+  //    std::cout << "I am in else" << '\n';
+  // }
+  publish_timer_.stop();
+  last_published_humans_.clear();
   starts = toGlobaolFrame(starts);
   goals = toGlobaolFrame(goals);
   sub_goals = toGlobaolFrame(sub_goals);
@@ -331,6 +382,8 @@ void MoveHumans::actionCB(
           return;
         }
 
+        publish_timer_.stop();
+        last_published_humans_.clear();
         starts = toGlobaolFrame(start_poses);
         goals = toGlobaolFrame(goal_poses);
         sub_goals = toGlobaolFrame(sub_goal_poses);
@@ -405,7 +458,9 @@ void MoveHumans::actionCB(
           cp_indices_[human_id] = 0;
         }
       }
-
+      if(teleported){
+        current_controller_plans_.clear();
+      }
       if (!controller_->setPlans(current_controller_plans_)) {
         ROS_ERROR_NAMED(NODE_NAME,
                         "Failed to pass the plans to the controller, aborting");
@@ -419,6 +474,7 @@ void MoveHumans::actionCB(
     ros::WallTime start = ros::WallTime::now();
 
     if (executeCycle(goals, global_plans)) {
+      publish_timer_.start();
       return;
     }
 
@@ -427,6 +483,9 @@ void MoveHumans::actionCB(
                     t_diff.toSec());
 
     r.sleep();
+    if(teleported){
+      controller_plans_->clear();
+    }
     if (r.cycleTime() > ros::Duration(1 / controller_frequency_) &&
         state_ == move_humans::MoveHumansState::CONTROLLING) {
       ROS_WARN_NAMED(NODE_NAME, "Control loop missed its desired rate of "
@@ -448,6 +507,7 @@ void MoveHumans::actionCB(
 
 bool MoveHumans::executeCycle(move_humans::map_pose &goals,
                               move_humans::map_pose_vector &global_plans) {
+  // std::cout << "I am in MoveHumans::executeCycle" << '\n';
   boost::recursive_mutex::scoped_lock ecl(configuration_mutex_);
 
   switch (state_) {
@@ -467,6 +527,34 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 
     current_controller_plans_.clear();
     current_controller_trajectories_.clear();
+    current_controller_vels_.clear();
+
+    auto now = ros::Time::now();
+    bool vels_resetted = false;
+    boost::unique_lock<boost::mutex> vels_lock(external_vels_mutex_);
+    auto external_vel_it = external_vels_.begin();
+    while (external_vel_it != external_vels_.end()) {
+      auto &human_id = external_vel_it->first;
+      auto &vel_time = external_vel_it->second;
+      current_controller_vels_[human_id] = vel_time.vel;
+      if ((now - vel_time.update_time).toSec() > external_vels_timeout_) {
+        // signal for the controller to stop using velocity mode
+        current_controller_vels_[human_id].linear.z = -1.0;
+        // remove outdated entry from external velocity map
+        external_vel_it = external_vels_.erase(external_vel_it);
+        vels_resetted = true;
+      } else {
+        ++external_vel_it;
+      }
+    }
+    vels_lock.unlock();
+
+    if (vels_resetted) {
+      boost::unique_lock<boost::mutex> lock(planner_mutex_);
+      run_planner_ = true;
+      planner_cond_.notify_one();
+      lock.unlock();
+    }
 
     if (reset_controller_plans_) {
       reset_controller_plans_ = false;
@@ -489,6 +577,12 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
     } else {
       if (reached_humans.size() > 0) {
         for (auto &human_id : reached_humans) {
+          if (current_controller_vels_.find(human_id) !=
+              current_controller_vels_.end()) {
+            continue;
+          }
+
+          // remove top plan from the plan vector
           auto plan_vector_it = controller_plans_->find(human_id);
           if (plan_vector_it != controller_plans_->end()) {
             auto &plan_vector = plan_vector_it->second;
@@ -499,6 +593,20 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
               }
             }
           }
+
+          // remove a subgoal or final goal
+          bool sub_goals_empty = false;
+          auto planner_sub_goals_it = planner_sub_goals_.find(human_id);
+          if (planner_sub_goals_it != planner_sub_goals_.end()) {
+            auto &sub_goal_vector = planner_sub_goals_it->second;
+            if (!sub_goal_vector.empty()) {
+              sub_goal_vector.erase(sub_goal_vector.begin());
+            } else {
+              planner_goals_.erase(human_id);
+            }
+          } else {
+            planner_goals_.erase(human_id);
+          }
         }
       }
 
@@ -507,6 +615,10 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
         new_external_controller_trajs_ = false;
         for (auto &human_trajectory :
              external_controller_trajs_->trajectories) {
+          if (current_controller_vels_.find(human_trajectory.id) !=
+              current_controller_vels_.end()) {
+            continue;
+          }
           current_controller_trajectories_[human_trajectory.id] =
               human_trajectory.trajectory;
           // reached_humans.erase(std::remove(reached_humans.begin(),
@@ -519,9 +631,14 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
     }
 
     if (current_controller_plans_.size() > 0 ||
-        current_controller_trajectories_.size() > 0) {
+        current_controller_trajectories_.size() > 0 ||
+        current_controller_vels_.size() > 0) {
+          if(teleported){
+            current_controller_plans_.clear();
+          }
       if (!controller_->setPlans(current_controller_plans_,
-                                 current_controller_trajectories_)) {
+                                 current_controller_trajectories_,
+                                 current_controller_vels_)) {
         ROS_ERROR_NAMED(NODE_NAME,
                         "Failed to pass the plans to the controller, aborting");
       }
@@ -547,6 +664,7 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
       ROS_DEBUG_NAMED(NODE_NAME,
                       "Got valid human positions from the controller");
       publishHumans(current_human_points);
+      // publishing feedback is critical, do not disable it unless necessary
       if (publish_feedback_) {
         auto now = ros::Time::now();
         auto controller_frame = controller_costmap_ros_->getGlobalFrameID();
@@ -566,6 +684,9 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
           human_pose.human_id = human_id;
           human_pose.pose = pose;
           feedback.current_poses.push_back(human_pose);
+
+          // update start poses
+          planner_starts_[human_id] = pose;
         }
         mhas_->publishFeedback(feedback);
       }
@@ -602,6 +723,7 @@ bool MoveHumans::executeCycle(move_humans::map_pose &goals,
 }
 
 void MoveHumans::resetState() {
+  // std::cout << "I am in MoveHumans::resetState" << '\n';
   boost::unique_lock<boost::mutex> lock(planner_mutex_);
   run_planner_ = false;
   state_ = move_humans::MoveHumansState::IDLE;
@@ -619,6 +741,7 @@ bool MoveHumans::loadPlugin(const std::string plugin_name,
                             boost::shared_ptr<T> &plugin,
                             pluginlib::ClassLoader<T> &plugin_loader,
                             costmap_2d::Costmap2DROS *plugin_costmap) {
+  // std::cout << "I am in MoveHumans::loadPlugin" << '\n';
   boost::shared_ptr<T> old_plugin = plugin;
   ROS_INFO_NAMED(NODE_NAME, "Loading plugin %s", plugin_name.c_str());
   try {
@@ -628,7 +751,7 @@ bool MoveHumans::loadPlugin(const std::string plugin_name,
     planner_plans_->clear();
     controller_plans_->clear();
     latest_plans_->clear();
-    plugin->initialize(plugin_loader.getName(plugin_name), &tf_,
+    plugin->initialize(plugin_loader.getName(plugin_name), &tf2_,
                        plugin_costmap);
     lock.unlock();
 
@@ -646,6 +769,7 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
                                move_humans::map_pose &starts,
                                move_humans::map_pose_vector &sub_goals,
                                move_humans::map_pose &goals) {
+  // std::cout << "I am in MoveHumans::validateGoals" << '\n';
   if (mh_goal.start_poses.size() == 0 || mh_goal.goal_poses.size() == 0 ||
       mh_goal.start_poses.size() != mh_goal.goal_poses.size()) {
     ROS_ERROR_NAMED(NODE_NAME, "Number of start and goals poses are not equal, "
@@ -774,6 +898,7 @@ bool MoveHumans::validateGoals(const move_humans::MoveHumansGoal &mh_goal,
 }
 
 bool MoveHumans::isQuaternionValid(const geometry_msgs::Quaternion &q) {
+  // std::cout << "I am in MoveHumans::isQuaternionValid" << '\n';
   if (!std::isfinite(q.x) || !std::isfinite(q.y) || !std::isfinite(q.z) ||
       !std::isfinite(q.w)) {
     ROS_ERROR_NAMED(NODE_NAME, "Quaternion has nans or infs");
@@ -800,23 +925,33 @@ bool MoveHumans::isQuaternionValid(const geometry_msgs::Quaternion &q) {
 
 move_humans::map_pose
 MoveHumans::toGlobaolFrame(const move_humans::map_pose &pose_map) {
+  // std::cout << "I am in MoveHumans::toGlobaolFrame" << '\n';
   move_humans::map_pose global_pose_map;
   std::string global_frame = planner_costmap_ros_->getGlobalFrameID();
-  for (auto &pose_kv : pose_map) {
-    tf::Stamped<tf::Pose> tf_pose, global_tf_pose;
-    poseStampedMsgToTF(pose_kv.second, tf_pose);
 
+  for (auto &pose_kv : pose_map) {
+    tf2::Stamped<tf2::Transform> tf_pose;
+    std::string human_frame = pose_kv.second.header.frame_id;
+    tf2::fromMsg(pose_kv.second, tf_pose);
+
+    geometry_msgs::TransformStamped global_pose_transform;
     tf_pose.stamp_ = ros::Time();
     try {
-      tf_.transformPose(global_frame, tf_pose, global_tf_pose);
-    } catch (tf::TransformException &ex) {
+      // tf2_.transformPose(global_frame, tf_pose, global_tf_pose);
+      global_pose_transform = tf2_.lookupTransform(global_frame,human_frame,ros::Time(0));
+
+    } catch (tf2::TransformException &ex) {
       ROS_WARN("Failed to transform pose from %s into the %s frame: %s",
                tf_pose.frame_id_.c_str(), global_frame.c_str(), ex.what());
-      global_tf_pose = tf_pose;
+      ROS_INFO("Here");
+      // global_tf_pose = tf_pose;
     }
 
-    geometry_msgs::PoseStamped global_pose;
-    tf::poseStampedTFToMsg(global_tf_pose, global_pose);
+
+    geometry_msgs::PoseStamped global_pose,tf_pose_msg;
+    tf_pose_msg = tf2::toMsg(tf_pose, tf_pose_msg);
+    tf2::doTransform(tf_pose_msg,global_pose,global_pose_transform);
+    // tf::poseStampedTFToMsg(tf_pose_msg, global_pose);
     global_pose_map[pose_kv.first] = global_pose;
   }
   return global_pose_map;
@@ -824,25 +959,34 @@ MoveHumans::toGlobaolFrame(const move_humans::map_pose &pose_map) {
 
 move_humans::map_pose_vector MoveHumans::toGlobaolFrame(
     const move_humans::map_pose_vector &pose_vector_map) {
+  // std::cout << "I am in MoveHumans::toGlobaolFrame(vector)" << '\n';
   move_humans::map_pose_vector global_pose_vector_map;
   std::string global_frame = planner_costmap_ros_->getGlobalFrameID();
   for (auto &pose_vector_kv : pose_vector_map) {
     move_humans::pose_vector global_pose_vector;
     for (auto &pose : pose_vector_kv.second) {
-      tf::Stamped<tf::Pose> tf_pose, global_tf_pose;
-      poseStampedMsgToTF(pose, tf_pose);
+      tf2::Stamped<tf2::Transform> tf_pose, global_tf_pose;
+      std::string human_frame = pose.header.frame_id;
+      tf2::fromMsg(pose, tf_pose);
 
+      geometry_msgs::TransformStamped global_pose_transform;
       tf_pose.stamp_ = ros::Time();
       try {
-        tf_.transformPose(global_frame, tf_pose, global_tf_pose);
-      } catch (tf::TransformException &ex) {
+        // tf2_.transformPose(global_frame, tf_pose, global_tf_pose);
+        global_pose_transform = tf2_.lookupTransform(global_frame,human_frame,ros::Time(0));
+      } catch (tf2::TransformException &ex) {
         ROS_WARN("Failed to transform pose from %s into the %s frame: %s",
                  tf_pose.frame_id_.c_str(), global_frame.c_str(), ex.what());
-        global_tf_pose = tf_pose;
+        // global_tf_pose = tf_pose;
       }
 
-      geometry_msgs::PoseStamped global_pose;
-      tf::poseStampedTFToMsg(global_tf_pose, global_pose);
+      geometry_msgs::PoseStamped global_pose,tf_pose_msg;
+      tf_pose_msg = tf2::toMsg(tf_pose, tf_pose_msg);
+      tf2::doTransform(tf_pose_msg,global_pose,global_pose_transform);
+      //
+      // geometry_msgs::PoseStamped global_pose;
+      // tf2::doTransform(tf_pose,global_tf_pose,global_pose_transform);
+      // tf::poseStampedTFToMsg(global_tf_pose, global_pose);
       global_pose_vector.push_back(global_pose);
     }
     global_pose_vector_map[pose_vector_kv.first] = global_pose_vector;
@@ -852,6 +996,7 @@ move_humans::map_pose_vector MoveHumans::toGlobaolFrame(
 
 bool MoveHumans::clearCostmapsService(std_srvs::Empty::Request &req,
                                       std_srvs::Empty::Response &resp) {
+  // std::cout << "I am in MoveHumans::clearCostmapsService" << '\n';
   planner_costmap_ros_->resetLayers();
   controller_costmap_ros_->resetLayers();
   return true;
@@ -859,6 +1004,7 @@ bool MoveHumans::clearCostmapsService(std_srvs::Empty::Request &req,
 
 bool MoveHumans::followExternalPaths(std_srvs::SetBool::Request &req,
                                      std_srvs::SetBool::Response &res) {
+  // std::cout << "I am in MoveHumans::followExternalPaths" << '\n';
   std::string message = req.data ? "F" : "Not f";
   message += "ollowing external paths";
   ROS_INFO_NAMED(NODE_NAME, "%s", message.c_str());
@@ -866,6 +1012,7 @@ bool MoveHumans::followExternalPaths(std_srvs::SetBool::Request &req,
   res.message = message;
   use_external_trajs_ = req.data;
   if (!use_external_trajs_) {
+    ROS_INFO_NAMED(NODE_NAME, "%d",2);
     boost::mutex::scoped_lock(external_trajs_mutex_);
     external_controller_trajs_ = NULL;
   }
@@ -874,32 +1021,60 @@ bool MoveHumans::followExternalPaths(std_srvs::SetBool::Request &req,
 
 void MoveHumans::controllerPathsCB(
     const hanp_msgs::HumanTrajectoryArrayConstPtr traj_array) {
+  // std::cout << "I am in MoveHumans::controllerPathsCB" << '\n';
   boost::mutex::scoped_lock(external_trajs_mutex_);
   external_controller_trajs_ = traj_array;
   new_external_controller_trajs_ = true;
 }
 
+void MoveHumans::controllerTwistsCB(
+    const hanp_msgs::HumanTwistArrayConstPtr twist_array) {
+  // std::cout << "I am in controllerTwistsCB" << '\n';
+  boost::mutex::scoped_lock(external_vels_mutex_);
+  auto now = ros::Time::now();
+  for (auto &human_twist : twist_array->twists) {
+    move_humans::TwistTime twist_time = {.vel = human_twist.twist,
+                                         .update_time = now};
+    external_vels_[human_twist.id] = twist_time;
+  }
+}
+
+void MoveHumans::RobotPosCB(
+    hanp_msgs::Trajectory trajectory) {
+	robot_pos = trajectory.points[0];
+	ROS_INFO("Start X: %f, Start Y: %f", robot_pos.transform.translation.x, robot_pos.transform.translation.y);
+	auto xpos = robot_pos.transform.translation.x;
+	auto ypos = robot_pos.transform.translation.y;
+}
+
 void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
+  // std::cout << "I am in MoveHumans::publishHumans" << '\n';
   auto now = ros::Time::now();
   auto controller_frame = controller_costmap_ros_->getGlobalFrameID();
   auto publish_human_markers = last_config_.publish_human_markers;
 
+  for (auto &human_pt_kv : human_pts) {
+    last_published_humans_[human_pt_kv.first] = human_pt_kv.second;
+  }
+
   hanp_msgs::TrackedHumans humans;
   visualization_msgs::MarkerArray humans_markers;
-  for (auto &human_pt_kv : human_pts) {
+  for (auto &human_pt_kv : last_published_humans_) {
     hanp_msgs::TrackedSegment human_segment;
     human_segment.type = DEFAUTL_SEGMENT_TYPE;
-    human_segment.pose.pose.position.x =
-        human_pt_kv.second.transform.translation.x;
-    human_segment.pose.pose.position.y =
-        human_pt_kv.second.transform.translation.y;
+    human_segment.pose.pose.position.x = human_pt_kv.second.transform.translation.x;
+    human_segment.pose.pose.position.y = human_pt_kv.second.transform.translation.y;
     human_segment.pose.pose.orientation = human_pt_kv.second.transform.rotation;
     human_segment.pose.covariance[0] = human_radius_;
     human_segment.pose.covariance[7] = human_radius_;
 
     auto yaw = tf::getYaw(human_segment.pose.pose.orientation);
-    human_segment.twist.twist.linear.x = human_pt_kv.second.velocity.linear.x * std::cos(yaw);
-    human_segment.twist.twist.linear.y = human_pt_kv.second.velocity.linear.x * std::sin(yaw);
+    // human_segment.twist.twist.linear.x =
+    //     human_pt_kv.second.velocity.linear.x * std::cos(yaw);
+    // human_segment.twist.twist.linear.y =
+    //     human_pt_kv.second.velocity.linear.x * std::sin(yaw);
+    human_segment.twist.twist.linear.x = human_pt_kv.second.velocity.linear.x;
+    human_segment.twist.twist.linear.y = human_pt_kv.second.velocity.linear.y;
     human_segment.twist.twist.angular.z = human_pt_kv.second.velocity.angular.z;
     hanp_msgs::TrackedHuman human;
     human.track_id = human_pt_kv.first;
@@ -971,5 +1146,14 @@ void MoveHumans::publishHumans(const move_humans::map_traj_point &human_pts) {
       clear_human_markers_ = false;
     }
   }
+}
+
+void MoveHumans::publishCallback(const ros::TimerEvent &timer_event) {
+  // std::cout << "I am in MoveHumans::publishCallback" << '\n';
+  move_humans::map_traj_point empty;
+  // geometry_msgs::PoseStamped new_pose;
+  // ROS_INFO("Ros Time stamp: %.4f",ros::Time().toSec());
+  // ROS_INFO("Ros Time now stamp: %.4f",ros::Time::now().toSec());
+  publishHumans(empty);
 }
 };

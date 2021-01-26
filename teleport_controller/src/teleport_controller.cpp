@@ -6,6 +6,8 @@
 #define ANGULAR_DIST_EPS 0.001
 #define EP_TIME_EPS 0.001
 #define POINT_JUMP_EPS 0.001
+#define ANG_VEL_EPS 0.001
+#define THROTTLE_TIME 1 // seconds
 
 #include <pluginlib/class_list_macros.h>
 #include <angles/angles.h>
@@ -20,12 +22,14 @@ TeleportController::TeleportController() : initialized_(false), setup_(false) {}
 
 TeleportController::~TeleportController() { delete dsrv_; }
 
-void TeleportController::initialize(std::string name, tf::TransformListener *tf,
+void TeleportController::initialize(std::string name, tf2_ros::Buffer *tf2,
                                     costmap_2d::Costmap2DROS *costmap_ros) {
   if (!isInitialized()) {
     ros::NodeHandle private_nh("~/" + name);
-    tf_ = tf;
+    tf2_ = tf2;
+    tf2_ros::TransformListener tf2_lisn(*tf2);
     costmap_ros_ = costmap_ros;
+    ROS_INFO("Costmap loaded TeleportController");
     controller_frame_ = costmap_ros_->getGlobalFrameID();
     if (controller_frame_.compare("") == 0) {
       controller_frame_ = DEFAULT_CONTROLLER_FRAME;
@@ -64,25 +68,29 @@ void TeleportController::reconfigureCB(TeleportControllerConfig &config,
 
 bool TeleportController::setPlans(const move_humans::map_pose_vector &plans) {
   move_humans::map_trajectory trajectory_map;
-  return setPlans(plans, trajectory_map);
+  move_humans::map_twist twist_map;
+  return setPlans(plans, trajectory_map, twist_map);
 }
 
 bool TeleportController::setPlans(
     const move_humans::map_pose_vector &plans,
-    const move_humans::map_trajectory &trajectories) {
+    const move_humans::map_trajectory &trajectories,
+    const move_humans::map_twist &vels) {
   if (!isInitialized()) {
     ROS_ERROR_NAMED(NODE_NAME, "This controller has not been initialized");
     return false;
   }
 
-  ROS_DEBUG_NAMED(NODE_NAME, "Got %ld plan%s and %ld trajector%s", plans.size(),
-                  plans.size() > 1 ? "s" : "", trajectories.size(),
-                  trajectories.size() > 0 ? "y" : "ies");
+  ROS_DEBUG_NAMED(NODE_NAME, "Got %ld plan%s, %ld trajector%s and %ld twist%s",
+                  plans.size(), plans.size() == 1 ? "" : "s",
+                  trajectories.size(), trajectories.size() == 1 ? "y" : "ies",
+                  vels.size(), vels.size() == 1 ? "" : "s");
 
   for (auto &plan_kv : plans) {
     auto &human_id = plan_kv.first;
     auto &plan = plan_kv.second;
 
+    // new plans received, so remove entries from reached_goals_
     reached_goals_.erase(
         std::remove(reached_goals_.begin(), reached_goals_.end(), human_id),
         reached_goals_.end());
@@ -95,6 +103,7 @@ bool TeleportController::setPlans(
     auto &human_id = trajectory_kv.first;
     auto &trajectory = trajectory_kv.second;
 
+    // new trajectories received, so remove entries from reached_goals_
     reached_goals_.erase(
         std::remove(reached_goals_.begin(), reached_goals_.end(), human_id),
         reached_goals_.end());
@@ -110,6 +119,25 @@ bool TeleportController::setPlans(
     trajs_[human_id] = trajectory;
     if (trajs_[human_id].points.size() > 1) {
       trajs_[human_id].points.erase(trajs_[human_id].points.begin());
+    }
+  }
+
+  vels_.clear();
+  for (auto &vel_kv : vels) {
+    auto &human_id = vel_kv.first;
+    auto &human_twist = vel_kv.second;
+
+    // new velocities received, so remove entries from reached_goals_
+    reached_goals_.erase(
+        std::remove(reached_goals_.begin(), reached_goals_.end(), human_id),
+        reached_goals_.end());
+
+    // velocity moder override plans
+    plans_.erase(human_id);
+
+    // update velocities that will be used at next iteration of controller
+    if (human_twist.linear.z != -1.0) {
+      vels_[human_id] = human_twist;
     }
   }
 
@@ -131,6 +159,7 @@ bool TeleportController::computeHumansStates(
   // get a copy of transformed plans, will transform if plans are new
   move_humans::map_trajectory transformed_trajs;
   if (!transformPlansAndTrajs(plans_, trajs_, transformed_trajs)) {
+    // std::cout << "Plans: "<<plans_.size() << "Trajs: " << trajs_.size() << '\n';
     ROS_ERROR_NAMED(NODE_NAME, "Cannot transform plans to controller frame");
     return false;
   }
@@ -191,7 +220,7 @@ bool TeleportController::computeHumansStates(
     // get references to adjusted last pose and twist
     auto last_point = last_traj_point;
     double last_time = last_point.time_from_start.toSec();
-    double linear_dist, linear_time, angular_dist, angular_time, step_time,
+    double linear_dist,linear_dist_x,linear_dist_y, linear_time, linear_time_x, linear_time_y, angular_dist, angular_time, step_time,
         total_time = 0.0, acc_time = 0.0, last_total_time = 0.0;
     double start_point_time = last_time < 0.0 ? 0.0 : last_time;
     while (next_point_index < transformed_traj.points.size()) {
@@ -202,16 +231,22 @@ bool TeleportController::computeHumansStates(
                                      last_point.transform.translation.x,
                                  next_point.transform.translation.y -
                                      last_point.transform.translation.y);
+        linear_dist_x = std::abs(next_point.transform.translation.x - last_point.transform.translation.x);
+        linear_dist_y = std::abs(next_point.transform.translation.y - last_point.transform.translation.y);
+        // std::cout << "linear_dist_x" << linear_dist_x <<"linear_dist_y"<< linear_dist_y<<'\n';
         if (linear_dist < POINT_JUMP_EPS) {
           next_point_index++;
           continue;
         }
         linear_time = linear_dist / last_config_.max_linear_vel;
+        linear_time_x = linear_dist_x / last_config_.max_x_vel;
+        linear_time_y = linear_dist_y / last_config_.max_y_vel;
         angular_dist = std::abs(angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
             tf::getYaw(next_point.transform.rotation)));
         angular_time = angular_dist / last_config_.max_angular_vel;
         // angular_time = 0.0;
+        linear_time = std::max(linear_time_x, linear_time_y);
         step_time = std::max(linear_time, angular_time);
         acc_time += step_time;
         total_time += step_time;
@@ -231,6 +266,7 @@ bool TeleportController::computeHumansStates(
       reached_goals_.push_back(human_id);
       last_traj_point.transform = transformed_traj.points.back().transform;
       last_traj_point.velocity.linear.x = 0.0;
+      last_traj_point.velocity.linear.y = 0.0;
       last_traj_point.velocity.angular.z = 0.0;
       last_traj_point.time_from_start.fromSec(-1.0);
       last_traj_points_[human_id] = last_traj_point;
@@ -282,9 +318,13 @@ bool TeleportController::computeHumansStates(
         last_point.velocity.linear.x +=
             (next_point.velocity.linear.x - last_point.velocity.linear.x) *
             time_ratio;
+        last_point.velocity.linear.y +=
+            (next_point.velocity.linear.y - last_point.velocity.linear.y) *
+            time_ratio;
         last_point.velocity.angular.z +=
             (next_point.velocity.angular.z - last_point.velocity.angular.z) *
             time_ratio;
+        // std::cout << "I am at the eps if" << '\n';
         last_point.time_from_start.fromSec(
             last_point.time_from_start.toSec() +
             (next_point.time_from_start.toSec() -
@@ -326,20 +366,30 @@ bool TeleportController::computeHumansStates(
         //     (angular_dist * ratio_ang_dist));
       } else {
         // assuming maximum velocities
-        linear_dist = std::hypot(next_point.transform.translation.x -
-                                     last_point.transform.translation.x,
-                                 next_point.transform.translation.y -
-                                     last_point.transform.translation.y);
+        linear_dist = std::hypot(next_point.transform.translation.x - last_point.transform.translation.x,
+                                 next_point.transform.translation.y - last_point.transform.translation.y);
+
+        linear_dist_x = std::abs(next_point.transform.translation.x - last_point.transform.translation.x);
+        linear_dist_y = std::abs(next_point.transform.translation.y - last_point.transform.translation.y);
+
         double can_lin_dist = last_config_.max_linear_vel * ep_time;
+        double can_lin_dist_x = last_config_.max_x_vel * ep_time;
+        double can_lin_dist_y = last_config_.max_y_vel * ep_time;
+
         double ratio_lin_dist = std::min(can_lin_dist / linear_dist, 1.0);
+        double ratio_lin_dist_x = std::min(can_lin_dist_x / linear_dist_x, 1.0);
+        double ratio_lin_dist_y = std::min(can_lin_dist_y / linear_dist_y, 1.0);
+
         last_point.transform.translation.x +=
             (next_point.transform.translation.x -
              last_point.transform.translation.x) *
-            ratio_lin_dist;
+            ratio_lin_dist_x;
         last_point.transform.translation.y +=
             (next_point.transform.translation.y -
              last_point.transform.translation.y) *
-            ratio_lin_dist;
+            ratio_lin_dist_y;
+
+        // std::cout << "last_point.transform.translation.x" << last_point.transform.translation.x << "last_point.transform.translation.y" << last_point.transform.translation.y << '\n';
 
         angular_dist = angles::shortest_angular_distance(
             tf::getYaw(last_point.transform.rotation),
@@ -358,11 +408,13 @@ bool TeleportController::computeHumansStates(
                                      last_traj_point.transform.translation.x,
                                  last_point.transform.translation.y -
                                      last_traj_point.transform.translation.y);
-        last_point.velocity.linear.x = linear_dist / cycle_time;
+        // last_point.velocity.linear.x = linear_dist / cycle_time;
+        last_point.velocity.linear.x = (last_point.transform.translation.x - last_traj_point.transform.translation.x)/cycle_time;
+        last_point.velocity.linear.y = (last_point.transform.translation.y - last_traj_point.transform.translation.y)/cycle_time;
         angular_dist = tf::getYaw(last_point.transform.rotation) -
                        tf::getYaw(last_traj_point.transform.rotation);
         last_point.velocity.angular.z = angular_dist / cycle_time;
-
+        // std::cout << "I am in the else" << '\n';
         last_point.time_from_start.fromSec(-1.0);
       }
     }
@@ -382,8 +434,41 @@ bool TeleportController::computeHumansStates(
     transformed_traj.points.insert(transformed_traj.points.begin(), last_point);
   }
 
-  humans = last_traj_points_;
+  // velocity control mode
+  for (auto &vel_kv : vels_) {
+    // std::cout << "Vel control mode" << std::endl;
+    auto last_traj_points_it = last_traj_points_.find(vel_kv.first);
+    auto &vel = vel_kv.second;
+    if (last_traj_points_it != last_traj_points_.end()) {
+      auto &last_traj_point = last_traj_points_it->second;
+      if (std::abs(vel.angular.z) > ANG_VEL_EPS) {
+        double r = std::hypot(vel.linear.x, vel.linear.y) / vel.angular.z;
+        double theta = vel.angular.z * cycle_time;
+        double crd = r * 2 * std::sin(theta / 2);
+        double alpha = std::atan2(vel.linear.y, vel.linear.x) + (theta / 2);
+        last_traj_point.transform.translation.x += (crd * std::cos(alpha));
+        last_traj_point.transform.translation.y += (crd * std::sin(alpha));
+        last_traj_point.transform.rotation = tf::createQuaternionMsgFromYaw(
+            tf::getYaw(last_traj_point.transform.rotation) + theta);
+      } else {
+        last_traj_point.transform.translation.x += (vel.linear.x * cycle_time);
+        last_traj_point.transform.translation.y += (vel.linear.y * cycle_time);
+      }
 
+      // ROS_INFO("new x=%.2f y=%.2f theta=%.2f lin=%.2f ang=%.2f time=%.2f",
+      //          last_traj_point.transform.translation.x,
+      //          last_traj_point.transform.translation.y,
+      //          tf::getYaw(last_traj_point.transform.rotation),
+      //          last_traj_point.velocity.linear.x,
+      //          last_traj_point.velocity.angular.z,
+      //          last_traj_point.time_from_start.toSec());
+    } else {
+      ROS_WARN_THROTTLE_NAMED(THROTTLE_TIME, NODE_NAME,
+                              "trying to twist human without plans");
+    }
+  }
+
+  humans = last_traj_points_;
   for (auto &human_id : reached_goals_) {
     last_traj_points_.erase(human_id);
     transformed_trajs.erase(human_id);
@@ -416,9 +501,17 @@ bool TeleportController::transformPlansAndTrajs(
     move_humans::map_trajectory &transformed_trajs) {
   transformed_trajs.clear();
 
+  int skipped = 0;
+
   for (auto &plan_kv : plans) {
     auto &human_id = plan_kv.first;
     auto &plan = plan_kv.second;
+
+    // skip if velocity mode is activated for this human
+    if (vels_.find(human_id) != vels_.end()) {
+      skipped++;
+      continue;
+    }
 
     if (plan.empty()) {
       ROS_ERROR_NAMED(NODE_NAME, "Received empty plan for human %ld", human_id);
@@ -437,6 +530,7 @@ bool TeleportController::transformPlansAndTrajs(
 
     auto transformed_traj_it = last_transformed_trajs_.find(human_id);
     if (transformed_traj_it != last_transformed_trajs_.end()) {
+      // std::cout << "giving hldajhldhld" << '\n';
       transformed_trajs[human_id] = transformed_traj_it->second;
       ROS_DEBUG_NAMED(
           NODE_NAME,
@@ -446,16 +540,19 @@ bool TeleportController::transformPlansAndTrajs(
     }
 
     if (plan[0].header.frame_id != controller_frame_) {
+      // std::cout << "planning here" << '\n';
       ROS_INFO("plan %s controller %s", plan[0].header.frame_id.c_str(),
                controller_frame_.c_str());
       try {
-        tf::StampedTransform plan_to_controller_transform;
-        tf_->waitForTransform(controller_frame_, plan[0].header.frame_id,
-                              ros::Time(0), ros::Duration(0.5));
-        tf_->lookupTransform(controller_frame_, plan[0].header.frame_id,
-                             ros::Time(0), plan_to_controller_transform);
+        geometry_msgs::TransformStamped plan_to_controller_transform_msg;
+	//tf2_->canTransform(controller_frame_, plan[0].header.frame_id,
+          //                    ros::Time(0), ros::Duration(0.5));
+        plan_to_controller_transform_msg = tf2_->lookupTransform(controller_frame_, plan[0].header.frame_id,
+                                                                      ros::Time(0),ros::Duration(0.5));
+        tf2::Stamped<tf2::Transform> plan_to_controller_transform;
+        tf2::fromMsg(plan_to_controller_transform_msg,plan_to_controller_transform);
 
-        tf::Transform tf_trans;
+        tf2::Transform tf_trans;
         hanp_msgs::Trajectory transformed_traj;
         transformed_traj.header.stamp = plan_to_controller_transform.stamp_;
         transformed_traj.header.frame_id = controller_frame_;
@@ -465,9 +562,9 @@ bool TeleportController::transformPlansAndTrajs(
           traj_point.transform.translation.y = pose.pose.position.y;
           traj_point.transform.translation.z = pose.pose.position.z;
           traj_point.transform.rotation = pose.pose.orientation;
-          tf::transformMsgToTF(traj_point.transform, tf_trans);
+          tf2::fromMsg(traj_point.transform, tf_trans);
           tf_trans = plan_to_controller_transform * tf_trans;
-          tf::transformTFToMsg(tf_trans, traj_point.transform);
+          traj_point.transform = tf2::toMsg(tf_trans);
           traj_point.time_from_start.fromSec(-1.0);
           transformed_traj.points.push_back(traj_point);
         }
@@ -506,10 +603,17 @@ bool TeleportController::transformPlansAndTrajs(
                      human_id);
     }
   }
-
+  // std::cout << "I am outside loop" << '\n';
   for (auto &traj_kv : trajs) {
+    // std::cout << "I am in trajKv" << '\n';
     auto &human_id = traj_kv.first;
     auto &traj = traj_kv.second;
+
+    // skip if velocity mode is activated for this human
+    if (vels_.find(human_id) != vels_.end()) {
+      skipped++;
+      continue;
+    }
 
     if (traj.points.empty()) {
       ROS_ERROR_NAMED(NODE_NAME, "Received empty trajectory for human %ld",
@@ -539,24 +643,33 @@ bool TeleportController::transformPlansAndTrajs(
 
     if (traj.header.frame_id != controller_frame_) {
       try {
-        tf::StampedTransform traj_to_controller_transform;
-        tf_->waitForTransform(controller_frame_, traj.header.frame_id,
-                              ros::Time(0), ros::Duration(0.5));
-        tf_->lookupTransform(controller_frame_, traj.header.frame_id,
-                             ros::Time(0), traj_to_controller_transform);
+        geometry_msgs::TransformStamped traj_to_controller_transform_msg;
+	//tf2_->canTransform(controller_frame_, traj.header.frame_id,
+          //                    ros::Time(0), ros::Duration(0.5));
+        traj_to_controller_transform_msg = tf2_->lookupTransform(controller_frame_, traj.header.frame_id,
+                                                                      ros::Time(0),ros::Duration(0.5));
+        tf2::Stamped<tf2::Transform> traj_to_controller_transform;
+        tf2::fromMsg(traj_to_controller_transform_msg,traj_to_controller_transform);
+
+
         geometry_msgs::Twist traj_vel_in_controller_frame;
-        tf_->lookupTwist(controller_frame_, traj.header.frame_id, ros::Time(0),
+        lookupTwist(controller_frame_, traj.header.frame_id, ros::Time(0),
                          ros::Duration(0.1), traj_vel_in_controller_frame);
 
-        tf::Transform tf_trans;
+        tf2::Transform tf_trans;
         hanp_msgs::Trajectory transformed_traj;
         transformed_traj.header.stamp = traj_to_controller_transform.stamp_;
         transformed_traj.header.frame_id = controller_frame_;
         for (auto &traj_point : traj.points) {
           hanp_msgs::TrajectoryPoint tr_traj_point;
-          tf::transformMsgToTF(traj_point.transform, tf_trans);
+
+          tf2::fromMsg(traj_point.transform, tf_trans);
           tf_trans = traj_to_controller_transform * tf_trans;
-          tf::transformTFToMsg(tf_trans, tr_traj_point.transform);
+          tr_traj_point.transform = tf2::toMsg(tf_trans);
+
+          // tf::transformMsgToTF(traj_point.transform, tf_trans);
+          // tf_trans = traj_to_controller_transform * tf_trans;
+          // tf::transformTFToMsg(tf_trans, tr_traj_point.transform);
 
           tr_traj_point.velocity.linear.x =
               traj_point.velocity.linear.x -
@@ -589,7 +702,6 @@ bool TeleportController::transformPlansAndTrajs(
         continue;
       }
     } else {
-      ROS_INFO("givng old traj for human %ld", human_id);
       transformed_trajs[human_id] = traj;
       last_transformed_trajs_[human_id] = traj;
       ROS_DEBUG_NAMED(NODE_NAME,
@@ -597,9 +709,116 @@ bool TeleportController::transformPlansAndTrajs(
                      human_id);
     }
   }
-
-  return !transformed_trajs.empty();
+  if(plans.size() >0 && trajs.size() >0){
+    return true;
+  }
+  return (plans.size() + trajs.size() == transformed_trajs.size() + skipped);
 }
+
+int TeleportController::getLatestCommonTime(const std::string &source_frame, const std::string &target_frame, ros::Time& time, std::string* error_string) const
+{
+  tf2::CompactFrameID target_id = tf2_->_lookupFrameNumber(tf::strip_leading_slash(target_frame));
+  tf2::CompactFrameID source_id = tf2_->_lookupFrameNumber(tf::strip_leading_slash(source_frame));
+
+  return tf2_->_getLatestCommonTime(source_id, target_id, time, error_string);
+}
+
+void TeleportController::lookupTwist(const std::string& tracking_frame, const std::string& observation_frame,
+                              const ros::Time& time, const ros::Duration& averaging_interval,
+                              geometry_msgs::Twist& twist) const
+{
+  // ref point is origin of tracking_frame, ref_frame = obs_frame
+  lookupTwist(tracking_frame, observation_frame, observation_frame, tf2::Vector3(0,0,0), tracking_frame, time, averaging_interval, twist);
+};
+
+void TeleportController::lookupTwist(const std::string& tracking_frame, const std::string& observation_frame, const std::string& reference_frame,
+                 const tf2::Vector3 & reference_point, const std::string& reference_point_frame,
+                 const ros::Time& time, const ros::Duration& averaging_interval,
+                 geometry_msgs::Twist& twist) const
+{
+
+  ros::Time latest_time, target_time;
+  getLatestCommonTime(observation_frame, tracking_frame, latest_time, NULL); ///\TODO check time on reference point too
+
+  if (ros::Time() == time)
+    target_time = latest_time;
+  else
+    target_time = time;
+
+  ros::Time end_time = std::min(target_time + averaging_interval *0.5 , latest_time);
+
+  ros::Time start_time = std::max(ros::Time().fromSec(.00001) + averaging_interval, end_time) - averaging_interval;  // don't collide with zero
+  ros::Duration corrected_averaging_interval = end_time - start_time; //correct for the possiblity that start time was truncated above.
+  geometry_msgs::TransformStamped start_msg, end_msg;
+  start_msg = tf2_->lookupTransform(observation_frame, tracking_frame, start_time);
+  end_msg = tf2_->lookupTransform(observation_frame, tracking_frame, end_time);
+
+  tf2::Stamped< tf2::Transform > start,end;
+  tf2::fromMsg(start_msg,start);
+  tf2::fromMsg(end_msg,end);
+
+  tf2::Matrix3x3 temp = start.getBasis().inverse() * end.getBasis();
+  tf2::Quaternion quat_temp;
+  temp.getRotation(quat_temp);
+  tf2::Vector3 o = start.getBasis() * quat_temp.getAxis();
+  tfScalar ang = quat_temp.getAngle();
+
+  double delta_x = end.getOrigin().getX() - start.getOrigin().getX();
+  double delta_y = end.getOrigin().getY() - start.getOrigin().getY();
+  double delta_z = end.getOrigin().getZ() - start.getOrigin().getZ();
+
+
+  tf2::Vector3 twist_vel ((delta_x)/corrected_averaging_interval.toSec(),
+                       (delta_y)/corrected_averaging_interval.toSec(),
+                       (delta_z)/corrected_averaging_interval.toSec());
+  tf2::Vector3 twist_rot = o * (ang / corrected_averaging_interval.toSec());
+
+
+  // This is a twist w/ reference frame in observation_frame  and reference point is in the tracking_frame at the origin (at start_time)
+
+
+  //correct for the position of the reference frame
+  tf2::Stamped< tf2::Transform > inverse;
+  tf2::fromMsg(tf2_->lookupTransform(reference_frame,tracking_frame,  target_time),inverse);
+  tf2::Vector3 out_rot = inverse.getBasis() * twist_rot;
+  tf2::Vector3 out_vel = inverse.getBasis()* twist_vel + inverse.getOrigin().cross(out_rot);
+
+
+  //Rereference the twist about a new reference point
+  // Start by computing the original reference point in the reference frame:
+  tf2::Stamped<tf2::Vector3> rp_orig(tf2::Vector3(0,0,0), target_time, tracking_frame);
+  geometry_msgs::TransformStamped reference_frame_trans;
+  tf2::fromMsg(tf2_->lookupTransform(reference_frame,rp_orig.frame_id_,rp_orig.stamp_),reference_frame_trans);
+
+  geometry_msgs::PointStamped rp_orig_msg;
+  tf2::toMsg(rp_orig,rp_orig_msg);
+  tf2::doTransform(rp_orig_msg, rp_orig_msg, reference_frame_trans);
+
+  // convert the requrested reference point into the right frame
+  tf2::Stamped<tf2::Vector3> rp_desired(reference_point, target_time, reference_point_frame);
+  geometry_msgs::PointStamped rp_desired_msg;
+  tf2::toMsg(rp_desired,rp_desired_msg);
+  tf2::doTransform(rp_desired_msg, rp_desired_msg, reference_frame_trans);
+  // compute the delta
+  tf2::Vector3 delta = rp_desired - rp_orig;
+  // Correct for the change in reference point
+  out_vel = out_vel + out_rot * delta;
+  // out_rot unchanged
+
+  /*
+    printf("KDL: Rotation %f %f %f, Translation:%f %f %f\n",
+         out_rot.x(),out_rot.y(),out_rot.z(),
+         out_vel.x(),out_vel.y(),out_vel.z());
+  */
+
+  twist.linear.x =  out_vel.x();
+  twist.linear.y =  out_vel.y();
+  twist.linear.z =  out_vel.z();
+  twist.angular.x =  out_rot.x();
+  twist.angular.y =  out_rot.y();
+  twist.angular.z =  out_rot.z();
+
+};
 
 bool TeleportController::getProjectedPose(
     const hanp_msgs::Trajectory &traj, const size_t begin_index,

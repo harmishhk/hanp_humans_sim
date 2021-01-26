@@ -1,0 +1,33 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+    dictitems:
+      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      id: 0
+      max_angular_acc: 0.0
+      max_angular_vel: 1.1
+      max_linear_acc: 0.0
+      max_linear_vel: 0.6
+      max_x_vel: 0.6
+      max_y_vel: 0.2
+      name: Default
+      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      parent: 0
+      publish_plans: true
+      reset_dist: 1.0
+      restore_defaults: false
+      state: true
+      type: ''
+    state: []
+  max_angular_acc: 0.0
+  max_angular_vel: 1.1
+  max_linear_acc: 0.0
+  max_linear_vel: 0.6
+  max_x_vel: 0.6
+  max_y_vel: 0.2
+  publish_plans: true
+  reset_dist: 1.0
+  restore_defaults: false
+state: []
